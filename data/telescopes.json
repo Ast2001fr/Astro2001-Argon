@@ -1,0 +1,792 @@
+{
+  "brands": [
+    "Celestron",
+    "Sky-Watcher",
+    "Takahashi",
+    "Meade",
+    "Tele Vue",
+    "William Optics",
+    "Orion",
+    "Explore Scientific",
+    "Askar",
+    "Vixen",
+    "Bresser",
+    "Unistellar / Vaonis"
+  ],
+  "telescopes": [
+    {
+      "brand": "Celestron",
+      "model": "NexStar 4SE",
+      "apertureMm": 102,
+      "focalMm": 1325,
+      "fRatio": 13.0,
+      "type": "Maksutov-Cassegrain",
+      "obstructionPct": 34
+    },
+    {
+      "brand": "Celestron",
+      "model": "NexStar 5SE",
+      "apertureMm": 125,
+      "focalMm": 1250,
+      "fRatio": 10.0,
+      "type": "Schmidt-Cassegrain",
+      "obstructionPct": 35
+    },
+    {
+      "brand": "Celestron",
+      "model": "NexStar 6SE",
+      "apertureMm": 150,
+      "focalMm": 1500,
+      "fRatio": 10.0,
+      "type": "Schmidt-Cassegrain",
+      "obstructionPct": 37
+    },
+    {
+      "brand": "Celestron",
+      "model": "NexStar 8SE",
+      "apertureMm": 203,
+      "focalMm": 2032,
+      "fRatio": 10.0,
+      "type": "Schmidt-Cassegrain",
+      "obstructionPct": 31
+    },
+    {
+      "brand": "Celestron",
+      "model": "EdgeHD 800",
+      "apertureMm": 203,
+      "focalMm": 2032,
+      "fRatio": 10.0,
+      "type": "Aplanatic SCT",
+      "obstructionPct": 34
+    },
+    {
+      "brand": "Celestron",
+      "model": "EdgeHD 1100",
+      "apertureMm": 279,
+      "focalMm": 2800,
+      "fRatio": 10.0,
+      "type": "Aplanatic SCT",
+      "obstructionPct": 34
+    },
+    {
+      "brand": "Celestron",
+      "model": "EdgeHD 1400",
+      "apertureMm": 356,
+      "focalMm": 3910,
+      "fRatio": 11.0,
+      "type": "Aplanatic SCT",
+      "obstructionPct": 32
+    },
+    {
+      "brand": "Sky-Watcher",
+      "model": "Evostar 72ED DS-Pro",
+      "apertureMm": 72,
+      "focalMm": 420,
+      "fRatio": 5.8,
+      "type": "Apochromatic Refractor",
+      "obstructionPct": 0
+    },
+    {
+      "brand": "Sky-Watcher",
+      "model": "Evostar 80ED DS-Pro",
+      "apertureMm": 80,
+      "focalMm": 600,
+      "fRatio": 7.5,
+      "type": "Apochromatic Refractor",
+      "obstructionPct": 0
+    },
+    {
+      "brand": "Sky-Watcher",
+      "model": "Evostar 100ED DS-Pro",
+      "apertureMm": 100,
+      "focalMm": 900,
+      "fRatio": 9.0,
+      "type": "Apochromatic Refractor",
+      "obstructionPct": 0
+    },
+    {
+      "brand": "Sky-Watcher",
+      "model": "Esprit 120ED",
+      "apertureMm": 120,
+      "focalMm": 840,
+      "fRatio": 7.0,
+      "type": "Triplet APO Refractor",
+      "obstructionPct": 0
+    },
+    {
+      "brand": "Sky-Watcher",
+      "model": "Quattro 200P",
+      "apertureMm": 200,
+      "focalMm": 800,
+      "fRatio": 4.0,
+      "type": "Imaging Newtonian",
+      "obstructionPct": 33
+    },
+    {
+      "brand": "Sky-Watcher",
+      "model": "Skyliner 200P Dobsonian",
+      "apertureMm": 200,
+      "focalMm": 1200,
+      "fRatio": 6.0,
+      "type": "Dobsonian Newtonian",
+      "obstructionPct": 23
+    },
+    {
+      "brand": "Sky-Watcher",
+      "model": "FlexTube 300P GoTo",
+      "apertureMm": 305,
+      "focalMm": 1500,
+      "fRatio": 4.9,
+      "type": "Dobsonian Newtonian",
+      "obstructionPct": 24
+    },
+    {
+      "brand": "Takahashi",
+      "model": "FS-60CB",
+      "apertureMm": 60,
+      "focalMm": 355,
+      "fRatio": 5.9,
+      "type": "Fluorite Doublet APO",
+      "obstructionPct": 0
+    },
+    {
+      "brand": "Takahashi",
+      "model": "FC-76DCU",
+      "apertureMm": 76,
+      "focalMm": 570,
+      "fRatio": 7.5,
+      "type": "Fluorite Doublet APO",
+      "obstructionPct": 0
+    },
+    {
+      "brand": "Takahashi",
+      "model": "FC-100DF",
+      "apertureMm": 100,
+      "focalMm": 740,
+      "fRatio": 7.4,
+      "type": "Fluorite Doublet APO",
+      "obstructionPct": 0
+    },
+    {
+      "brand": "Takahashi",
+      "model": "FSQ-85EDX",
+      "apertureMm": 85,
+      "focalMm": 450,
+      "fRatio": 5.3,
+      "type": "Petzval Quadruplet APO",
+      "obstructionPct": 0
+    },
+    {
+      "brand": "Takahashi",
+      "model": "FSQ-106EDX4",
+      "apertureMm": 106,
+      "focalMm": 530,
+      "fRatio": 5.0,
+      "type": "Petzval Quadruplet APO",
+      "obstructionPct": 0
+    },
+    {
+      "brand": "Takahashi",
+      "model": "TOA-130NFB",
+      "apertureMm": 130,
+      "focalMm": 1000,
+      "fRatio": 7.7,
+      "type": "Ortho-Apochromat Triplet",
+      "obstructionPct": 0
+    },
+    {
+      "brand": "Takahashi",
+      "model": "Mewlon-210",
+      "apertureMm": 210,
+      "focalMm": 2415,
+      "fRatio": 11.5,
+      "type": "Dall-Kirkham Cassegrain",
+      "obstructionPct": 31
+    },
+    {
+      "brand": "Meade",
+      "model": "ETX-90 Observer",
+      "apertureMm": 90,
+      "focalMm": 1250,
+      "fRatio": 13.9,
+      "type": "Maksutov-Cassegrain",
+      "obstructionPct": 32
+    },
+    {
+      "brand": "Meade",
+      "model": "ETX-125 Observer",
+      "apertureMm": 127,
+      "focalMm": 1900,
+      "fRatio": 15.0,
+      "type": "Maksutov-Cassegrain",
+      "obstructionPct": 31
+    },
+    {
+      "brand": "Meade",
+      "model": "LX90-ACF 8\"",
+      "apertureMm": 203,
+      "focalMm": 2000,
+      "fRatio": 9.9,
+      "type": "Advanced Coma-Free SCT",
+      "obstructionPct": 35
+    },
+    {
+      "brand": "Meade",
+      "model": "LX200-ACF 10\"",
+      "apertureMm": 254,
+      "focalMm": 2500,
+      "fRatio": 9.8,
+      "type": "Advanced Coma-Free SCT",
+      "obstructionPct": 36
+    },
+    {
+      "brand": "Meade",
+      "model": "LX200-ACF 12\"",
+      "apertureMm": 305,
+      "focalMm": 3048,
+      "fRatio": 10.0,
+      "type": "Advanced Coma-Free SCT",
+      "obstructionPct": 35
+    },
+    {
+      "brand": "Meade",
+      "model": "LX200-ACF 16\"",
+      "apertureMm": 406,
+      "focalMm": 4064,
+      "fRatio": 10.0,
+      "type": "Advanced Coma-Free SCT",
+      "obstructionPct": 34
+    },
+    {
+      "brand": "Meade",
+      "model": "LightBridge Plus 12\"",
+      "apertureMm": 305,
+      "focalMm": 1524,
+      "fRatio": 5.0,
+      "type": "Truss Dobsonian",
+      "obstructionPct": 24
+    },
+    {
+      "brand": "Tele Vue",
+      "model": "TV-60",
+      "apertureMm": 60,
+      "focalMm": 360,
+      "fRatio": 6.0,
+      "type": "Apochromatic Refractor",
+      "obstructionPct": 0
+    },
+    {
+      "brand": "Tele Vue",
+      "model": "TV-76",
+      "apertureMm": 76,
+      "focalMm": 480,
+      "fRatio": 6.3,
+      "type": "Apochromatic Refractor",
+      "obstructionPct": 0
+    },
+    {
+      "brand": "Tele Vue",
+      "model": "TV-85",
+      "apertureMm": 85,
+      "focalMm": 600,
+      "fRatio": 7.1,
+      "type": "Apochromatic Refractor",
+      "obstructionPct": 0
+    },
+    {
+      "brand": "Tele Vue",
+      "model": "NP101is",
+      "apertureMm": 101,
+      "focalMm": 540,
+      "fRatio": 5.3,
+      "type": "Nagler-Petzval APO",
+      "obstructionPct": 0
+    },
+    {
+      "brand": "Tele Vue",
+      "model": "NP127is",
+      "apertureMm": 127,
+      "focalMm": 660,
+      "fRatio": 5.2,
+      "type": "Nagler-Petzval APO",
+      "obstructionPct": 0
+    },
+    {
+      "brand": "Tele Vue",
+      "model": "TV-60is Imaging",
+      "apertureMm": 60,
+      "focalMm": 360,
+      "fRatio": 6.0,
+      "type": "Imaging APO",
+      "obstructionPct": 0
+    },
+    {
+      "brand": "Tele Vue",
+      "model": "NP101 Classic",
+      "apertureMm": 101,
+      "focalMm": 540,
+      "fRatio": 5.3,
+      "type": "Nagler-Petzval APO",
+      "obstructionPct": 0
+    },
+    {
+      "brand": "William Optics",
+      "model": "RedCat 51 WIFD",
+      "apertureMm": 51,
+      "focalMm": 250,
+      "fRatio": 4.9,
+      "type": "Petzval APO",
+      "obstructionPct": 0
+    },
+    {
+      "brand": "William Optics",
+      "model": "RedCat 71 WIFD",
+      "apertureMm": 71,
+      "focalMm": 348,
+      "fRatio": 4.9,
+      "type": "Petzval APO",
+      "obstructionPct": 0
+    },
+    {
+      "brand": "William Optics",
+      "model": "ZenithStar 61 II",
+      "apertureMm": 61,
+      "focalMm": 360,
+      "fRatio": 5.9,
+      "type": "FPL-53 Doublet APO",
+      "obstructionPct": 0
+    },
+    {
+      "brand": "William Optics",
+      "model": "ZenithStar 73 III",
+      "apertureMm": 73,
+      "focalMm": 430,
+      "fRatio": 5.9,
+      "type": "FPL-53 Doublet APO",
+      "obstructionPct": 0
+    },
+    {
+      "brand": "William Optics",
+      "model": "Gran Turismo 81 IV",
+      "apertureMm": 81,
+      "focalMm": 478,
+      "fRatio": 5.9,
+      "type": "FPL-53 Triplet APO",
+      "obstructionPct": 0
+    },
+    {
+      "brand": "William Optics",
+      "model": "Fluorostar 132",
+      "apertureMm": 132,
+      "focalMm": 925,
+      "fRatio": 7.0,
+      "type": "FPL-53 Triplet APO",
+      "obstructionPct": 0
+    },
+    {
+      "brand": "William Optics",
+      "model": "Pleiades 68",
+      "apertureMm": 68,
+      "focalMm": 260,
+      "fRatio": 3.8,
+      "type": "Heptuplet Astrograph",
+      "obstructionPct": 0
+    },
+    {
+      "brand": "Orion",
+      "model": "StarBlast 4.5 Astro",
+      "apertureMm": 114,
+      "focalMm": 450,
+      "fRatio": 3.9,
+      "type": "Newtonian Reflector",
+      "obstructionPct": 26
+    },
+    {
+      "brand": "Orion",
+      "model": "SkyQuest XT6 Classic",
+      "apertureMm": 150,
+      "focalMm": 1200,
+      "fRatio": 8.0,
+      "type": "Dobsonian Newtonian",
+      "obstructionPct": 22
+    },
+    {
+      "brand": "Orion",
+      "model": "SkyQuest XT8 Plus",
+      "apertureMm": 203,
+      "focalMm": 1200,
+      "fRatio": 5.9,
+      "type": "Dobsonian Newtonian",
+      "obstructionPct": 23
+    },
+    {
+      "brand": "Orion",
+      "model": "SkyQuest XT10i",
+      "apertureMm": 254,
+      "focalMm": 1200,
+      "fRatio": 4.7,
+      "type": "Dobsonian Newtonian",
+      "obstructionPct": 24
+    },
+    {
+      "brand": "Orion",
+      "model": "SkyQuest XX14g GoTo",
+      "apertureMm": 356,
+      "focalMm": 1650,
+      "fRatio": 4.6,
+      "type": "Truss Dobsonian",
+      "obstructionPct": 23
+    },
+    {
+      "brand": "Orion",
+      "model": "Apex 127mm",
+      "apertureMm": 127,
+      "focalMm": 1540,
+      "fRatio": 12.1,
+      "type": "Maksutov-Cassegrain",
+      "obstructionPct": 31
+    },
+    {
+      "brand": "Explore Scientific",
+      "model": "ED80 Essential",
+      "apertureMm": 80,
+      "focalMm": 480,
+      "fRatio": 6.0,
+      "type": "Triplet APO Refractor",
+      "obstructionPct": 0
+    },
+    {
+      "brand": "Explore Scientific",
+      "model": "ED102 FCD100",
+      "apertureMm": 102,
+      "focalMm": 714,
+      "fRatio": 7.0,
+      "type": "Triplet APO Refractor",
+      "obstructionPct": 0
+    },
+    {
+      "brand": "Explore Scientific",
+      "model": "ED127 FCD100",
+      "apertureMm": 127,
+      "focalMm": 952,
+      "fRatio": 7.5,
+      "type": "Triplet APO Refractor",
+      "obstructionPct": 0
+    },
+    {
+      "brand": "Explore Scientific",
+      "model": "ED152 Carbon",
+      "apertureMm": 152,
+      "focalMm": 1216,
+      "fRatio": 8.0,
+      "type": "Triplet APO Refractor",
+      "obstructionPct": 0
+    },
+    {
+      "brand": "Explore Scientific",
+      "model": "FirstLight 203mm",
+      "apertureMm": 203,
+      "focalMm": 1000,
+      "fRatio": 4.9,
+      "type": "Newtonian Reflector",
+      "obstructionPct": 26
+    },
+    {
+      "brand": "Explore Scientific",
+      "model": "Ultra Light Dobsonian 16\"",
+      "apertureMm": 406,
+      "focalMm": 1826,
+      "fRatio": 4.5,
+      "type": "Truss Dobsonian",
+      "obstructionPct": 23
+    },
+    {
+      "brand": "Askar",
+      "model": "FMA180 Pro",
+      "apertureMm": 40,
+      "focalMm": 180,
+      "fRatio": 4.5,
+      "type": "Triplet Astrograph",
+      "obstructionPct": 0
+    },
+    {
+      "brand": "Askar",
+      "model": "FRA300 Pro",
+      "apertureMm": 60,
+      "focalMm": 300,
+      "fRatio": 5.0,
+      "type": "Quintuplet Petzval",
+      "obstructionPct": 0
+    },
+    {
+      "brand": "Askar",
+      "model": "FRA400",
+      "apertureMm": 72,
+      "focalMm": 400,
+      "fRatio": 5.6,
+      "type": "Quintuplet Petzval",
+      "obstructionPct": 0
+    },
+    {
+      "brand": "Askar",
+      "model": "FRA600",
+      "apertureMm": 108,
+      "focalMm": 600,
+      "fRatio": 5.6,
+      "type": "Quintuplet Petzval",
+      "obstructionPct": 0
+    },
+    {
+      "brand": "Askar",
+      "model": "103APO",
+      "apertureMm": 103,
+      "focalMm": 700,
+      "fRatio": 6.8,
+      "type": "Triplet APO Refractor",
+      "obstructionPct": 0
+    },
+    {
+      "brand": "Askar",
+      "model": "140APO",
+      "apertureMm": 140,
+      "focalMm": 980,
+      "fRatio": 7.0,
+      "type": "Triplet APO Refractor",
+      "obstructionPct": 0
+    },
+    {
+      "brand": "Vixen",
+      "model": "SD81SII",
+      "apertureMm": 81,
+      "focalMm": 625,
+      "fRatio": 7.7,
+      "type": "FPL-53 Doublet APO",
+      "obstructionPct": 0
+    },
+    {
+      "brand": "Vixen",
+      "model": "SD103SII",
+      "apertureMm": 103,
+      "focalMm": 795,
+      "fRatio": 7.7,
+      "type": "FPL-53 Doublet APO",
+      "obstructionPct": 0
+    },
+    {
+      "brand": "Vixen",
+      "model": "SD115SII",
+      "apertureMm": 115,
+      "focalMm": 890,
+      "fRatio": 7.7,
+      "type": "FPL-53 Doublet APO",
+      "obstructionPct": 0
+    },
+    {
+      "brand": "Vixen",
+      "model": "AX103S",
+      "apertureMm": 103,
+      "focalMm": 825,
+      "fRatio": 8.0,
+      "type": "Triplet ED APO",
+      "obstructionPct": 0
+    },
+    {
+      "brand": "Vixen",
+      "model": "R200SS",
+      "apertureMm": 200,
+      "focalMm": 800,
+      "fRatio": 4.0,
+      "type": "Fast Newtonian",
+      "obstructionPct": 33
+    },
+    {
+      "brand": "Vixen",
+      "model": "VMC200L",
+      "apertureMm": 200,
+      "focalMm": 1950,
+      "fRatio": 9.8,
+      "type": "Modified Cassegrain",
+      "obstructionPct": 38
+    },
+    {
+      "brand": "Bresser",
+      "model": "Messier AR-102xs",
+      "apertureMm": 102,
+      "focalMm": 460,
+      "fRatio": 4.5,
+      "type": "ED Achromat Refractor",
+      "obstructionPct": 0
+    },
+    {
+      "brand": "Bresser",
+      "model": "Messier AR-127L",
+      "apertureMm": 127,
+      "focalMm": 1200,
+      "fRatio": 9.4,
+      "type": "Achromat Refractor",
+      "obstructionPct": 0
+    },
+    {
+      "brand": "Bresser",
+      "model": "Messier MC-127",
+      "apertureMm": 127,
+      "focalMm": 1900,
+      "fRatio": 15.0,
+      "type": "Maksutov-Cassegrain",
+      "obstructionPct": 33
+    },
+    {
+      "brand": "Bresser",
+      "model": "Messier NT-150S",
+      "apertureMm": 150,
+      "focalMm": 750,
+      "fRatio": 5.0,
+      "type": "Newtonian Reflector",
+      "obstructionPct": 28
+    },
+    {
+      "brand": "Bresser",
+      "model": "Messier NT-203",
+      "apertureMm": 203,
+      "focalMm": 1000,
+      "fRatio": 4.9,
+      "type": "Newtonian Reflector",
+      "obstructionPct": 27
+    },
+    {
+      "brand": "Bresser",
+      "model": "Messier 10\" Dobsonian",
+      "apertureMm": 254,
+      "focalMm": 1270,
+      "fRatio": 5.0,
+      "type": "Dobsonian Newtonian",
+      "obstructionPct": 25
+    },
+    {
+      "brand": "Unistellar / Vaonis",
+      "model": "Unistellar eVscope 2",
+      "apertureMm": 114,
+      "focalMm": 450,
+      "fRatio": 3.9,
+      "type": "Smart Newtonian",
+      "obstructionPct": 28
+    },
+    {
+      "brand": "Unistellar / Vaonis",
+      "model": "Unistellar eQuinox 2",
+      "apertureMm": 114,
+      "focalMm": 450,
+      "fRatio": 3.9,
+      "type": "Smart Newtonian",
+      "obstructionPct": 28
+    },
+    {
+      "brand": "Unistellar / Vaonis",
+      "model": "Unistellar Odyssey Pro",
+      "apertureMm": 85,
+      "focalMm": 320,
+      "fRatio": 3.8,
+      "type": "Smart Reflector",
+      "obstructionPct": 27
+    },
+    {
+      "brand": "Unistellar / Vaonis",
+      "model": "Vaonis Stellina",
+      "apertureMm": 80,
+      "focalMm": 400,
+      "fRatio": 5.0,
+      "type": "Smart ED Doublet",
+      "obstructionPct": 0
+    },
+    {
+      "brand": "Unistellar / Vaonis",
+      "model": "Vaonis Vespera II",
+      "apertureMm": 50,
+      "focalMm": 250,
+      "fRatio": 5.0,
+      "type": "Smart Quadruplet",
+      "obstructionPct": 0
+    },
+    {
+      "brand": "Unistellar / Vaonis",
+      "model": "Vaonis Vespera Pro",
+      "apertureMm": 50,
+      "focalMm": 250,
+      "fRatio": 5.0,
+      "type": "Smart Quadruplet",
+      "obstructionPct": 0
+    }
+  ],
+  "eyepieces": [
+    {
+      "name": "Tele Vue Nagler 31mm Type 5",
+      "focalMm": 31.0,
+      "afovDeg": 82,
+      "barrelInch": 2.0,
+      "transmission": 0.96
+    },
+    {
+      "name": "Tele Vue Panoptic 24mm",
+      "focalMm": 24.0,
+      "afovDeg": 68,
+      "barrelInch": 1.25,
+      "transmission": 0.97
+    },
+    {
+      "name": "Explore Scientific 20mm 100°",
+      "focalMm": 20.0,
+      "afovDeg": 100,
+      "barrelInch": 2.0,
+      "transmission": 0.95
+    },
+    {
+      "name": "Baader Hyperion 17mm",
+      "focalMm": 17.0,
+      "afovDeg": 68,
+      "barrelInch": 1.25,
+      "transmission": 0.96
+    },
+    {
+      "name": "Tele Vue Ethos 13mm",
+      "focalMm": 13.0,
+      "afovDeg": 100,
+      "barrelInch": 1.25,
+      "transmission": 0.96
+    },
+    {
+      "name": "Pentax XW 10mm",
+      "focalMm": 10.0,
+      "afovDeg": 70,
+      "barrelInch": 1.25,
+      "transmission": 0.98
+    },
+    {
+      "name": "Tele Vue Delos 8mm",
+      "focalMm": 8.0,
+      "afovDeg": 72,
+      "barrelInch": 1.25,
+      "transmission": 0.97
+    },
+    {
+      "name": "Explore Scientific 6.7mm 82°",
+      "focalMm": 6.7,
+      "afovDeg": 82,
+      "barrelInch": 1.25,
+      "transmission": 0.95
+    },
+    {
+      "name": "Takahashi TOE 4mm",
+      "focalMm": 4.0,
+      "afovDeg": 52,
+      "barrelInch": 1.25,
+      "transmission": 0.99
+    },
+    {
+      "name": "Tele Vue Nagler Zoom 3-6mm (3mm)",
+      "focalMm": 3.0,
+      "afovDeg": 50,
+      "barrelInch": 1.25,
+      "transmission": 0.96
+    }
+  ]
+}

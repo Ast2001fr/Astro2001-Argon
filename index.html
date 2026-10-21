@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="fr" data-theme="meridien">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Uranométrie — Planétarium & Observatoire Web</title>
+  <meta name="description" content="Planétarium web complet : 4 vues, 871 136 étoiles ATHYG v3.2, 15 618 objets OpenNGC, 135 photos, HiPS DSS2, SGP4, éphémérides et mode hors-ligne.">
+  <meta name="theme-color" content="#0d1422">
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" type="image/png" href="assets/icons/icon-192.png">
+  <link rel="stylesheet" href="css/styles.css?v=2">
+</head>
+<body>
+  <!-- Full-screen Interactive Sky / Globe / Telescope / Solar System Canvas -->
+  <canvas id="sky-canvas"></canvas>
+
+  <!-- TOP HUD: 4 Views, Location, Search (⌘K), Theme, Language -->
+  <header class="top-hud">
+    <div class="hud-cluster">
+      <div class="brand-badge">
+        <span>✦</span>
+        <span data-i18n="app.title">Uranométrie</span>
+      </div>
+      <div class="hud-divider"></div>
+      <button class="view-tab active" data-view="terrestrial" title="Vue terrestre (1)">
+        🌍 <span data-i18n="views.terrestrial">Vue terrestre</span> <kbd>1</kbd>
+      </button>
+      <button class="view-tab" data-view="celestial" title="Sphère céleste (2)">
+        🌐 <span data-i18n="views.celestial">Sphère céleste</span> <kbd>2</kbd>
+      </button>
+      <button class="view-tab" data-view="telescope" title="Télescope & chercheur (3)">
+        🔭 <span data-i18n="views.telescope">Télescope</span> <kbd>3</kbd>
+      </button>
+      <button class="view-tab" data-view="solarsystem" title="Système solaire héliocentrique (4)">
+        🪐 <span data-i18n="views.solarsystem">Système solaire</span> <kbd>4</kbd>
+      </button>
+    </div>
+
+    <div class="hud-cluster">
+      <button class="hud-btn" id="btn-open-location" title="Choisir le lieu (33 848 villes, GPS, coordonnées)">
+        📍 <span id="hud-location-label">Paris (48.86°N, 2.35°E)</span>
+      </button>
+      <div class="hud-divider"></div>
+      <button class="hud-btn" id="btn-open-cmd" title="Palette de commandes (⌘K / Ctrl-K)">
+        🔍 <span data-i18n="cmd.placeholderShort">Rechercher / Actions</span> <kbd>⌘K</kbd>
+      </button>
+      <div class="hud-divider"></div>
+      <select id="theme-select" class="hud-select" title="Thème d'affichage">
+        <option value="meridien">Méridien</option>
+        <option value="classique">Classique</option>
+        <option value="observatoire">Observatoire</option>
+        <option value="celeste">Céleste</option>
+        <option value="almanach">Almanach</option>
+        <option value="nocturne">Vision nocturne</option>
+      </select>
+      <select id="lang-select" class="hud-select" title="Langue / Language">
+        <option value="fr">FR · Français</option>
+        <option value="en">EN · English</option>
+        <option value="es">ES · Español</option>
+        <option value="de">DE · Deutsch</option>
+      </select>
+    </div>
+  </header>
+
+  <!-- LEFT DOCK: Specialized Panels & Milky Way Brightness -->
+  <nav class="left-dock" aria-label="Panneaux astronomiques">
+    <button class="dock-btn" data-open-panel="tonight">
+      <span class="dock-icon">📈</span>
+      <span data-i18n="panels.tonight">Visibilité — nuit prochaine</span>
+    </button>
+    <button class="dock-btn" data-open-panel="twilight">
+      <span class="dock-icon">🌆</span>
+      <span data-i18n="panels.twilight">Crépuscules</span>
+    </button>
+    <button class="dock-btn" data-open-panel="weather">
+      <span class="dock-icon">☁️</span>
+      <span data-i18n="panels.weather">Météo (Open-Meteo)</span>
+    </button>
+    <button class="dock-btn" data-open-panel="satellites">
+      <span class="dock-icon">🛰️</span>
+      <span data-i18n="panels.satellites">ISS & 177 Satellites</span>
+    </button>
+    <button class="dock-btn" data-open-panel="events">
+      <span class="dock-icon">🌑</span>
+      <span data-i18n="panels.events">Éclipses, Météores & Agenda</span>
+    </button>
+    <button class="dock-btn" data-open-panel="horizon">
+      <span class="dock-icon">⛰️</span>
+      <span data-i18n="panels.horizon">Mon horizon</span>
+    </button>
+    <button class="dock-btn" data-open-panel="telescope">
+      <span class="dock-icon">🔬</span>
+      <span data-i18n="panels.telescope">Télescope & oculaires</span>
+    </button>
+    <button class="dock-btn" data-open-panel="offline">
+      <span class="dock-icon">📦</span>
+      <span data-i18n="panels.offline">Hors ligne & Paquets</span>
+    </button>
+    <button class="dock-btn" data-open-panel="manual">
+      <span class="dock-icon">📖</span>
+      <span data-i18n="panels.manual">Manuel & Raccourcis</span>
+    </button>
+
+    <div class="mw-slider-row">
+      <div style="display:flex; justify-content:space-between;">
+        <span data-i18n="controls.mwBrightness">Voie lactée</span>
+        <span id="mw-brightness-val">100%</span>
+      </div>
+      <input type="range" id="mw-brightness-slider" min="0" max="200" step="5" value="100">
+    </div>
+  </nav>
+
+  <!-- RIGHT DRAWER: 6-Section Object Card (Fiche d'objet) -->
+  <aside id="object-card-drawer" class="object-card-drawer hidden" aria-label="Fiche d'objet"></aside>
+
+  <!-- BOTTOM HUD: Timeline Scrubber + Display Layer Toggles -->
+  <footer class="bottom-hud">
+    <!-- Time Controls & Interactive Timeline Scrubber -->
+    <div class="timeline-bar">
+      <div class="time-controls">
+        <button class="hud-btn" id="btn-time-step-back" title="Reculer d'un pas ([)">⏮</button>
+        <button class="hud-btn" id="btn-time-rev" title="Inverser le sens (K)">⏪</button>
+        <button class="hud-btn active" id="btn-time-play" title="Lecture / Pause (Espace)">⏸</button>
+        <button class="hud-btn" id="btn-time-fwd" title="Accélérer (L)">⏩</button>
+        <button class="hud-btn" id="btn-time-step-fwd" title="Avancer d'un pas (])">⏭</button>
+        <button class="hud-btn" id="btn-time-now" title="Revenir à maintenant (J)">⏱ <span data-i18n="time.now">Maintenant</span></button>
+      </div>
+
+      <select id="time-speed-select" class="hud-select" title="Vitesse et pas temporel">
+        <option value="1">×1 (Temps réel)</option>
+        <option value="10">×10</option>
+        <option value="60">×60 (1 min/s)</option>
+        <option value="300">×300 (5 min/s)</option>
+        <option value="1800">×1800 (30 min/s)</option>
+        <option value="3600">×3600 (1 h/s)</option>
+      </select>
+
+      <select id="time-step-select" class="hud-select" title="Pas d'avance manuelle">
+        <option value="60">Pas : 1 min</option>
+        <option value="600">Pas : 10 min</option>
+        <option value="3600" selected>Pas : 1 heure</option>
+        <option value="86400">Pas : 1 jour solaire</option>
+        <option value="86164.09">Pas : 1 jour sidéral</option>
+      </select>
+
+      <div class="time-readout mono" id="hud-time-readout" title="Cliquer pour saisir une date exacte">
+        2026-10-20 21:00:00
+      </div>
+      <input type="datetime-local" id="date-picker-hidden" class="hidden">
+
+      <div class="timeline-scrubber-wrap">
+        <span class="muted mono" style="font-size:11px;">12h</span>
+        <input type="range" id="timeline-scrubber" min="-720" max="720" step="1" value="0" title="Frise temporelle sur 24h autour de minuit">
+        <span class="muted mono" style="font-size:11px;">+12h</span>
+      </div>
+    </div>
+
+    <!-- Display Layer Toggles (bound to features.js registry) -->
+    <div class="layer-toggles-bar" id="layer-toggles-bar"></div>
+  </footer>
+
+  <!-- MODAL OVERLAY FOR SPECIALIZED PANELS -->
+  <div id="modal-overlay" class="modal-overlay hidden">
+    <div class="modal-window">
+      <div class="modal-header">
+        <h2 id="modal-title">Panneau</h2>
+        <button class="icon-btn" id="modal-close" title="Fermer (Échap)">✕</button>
+      </div>
+      <div class="modal-body" id="modal-body"></div>
+    </div>
+  </div>
+
+  <!-- COMMAND PALETTE (⌘K / Ctrl-K) -->
+  <div id="cmd-palette-overlay" class="modal-overlay hidden">
+    <div class="cmd-palette-window">
+      <div class="cmd-input-row">
+        <span>🔍</span>
+        <input type="text" id="cmd-palette-input" placeholder="Rechercher un astre (M31, Sirius, NGC 7000, ISS, Cérès…) ou une commande…">
+        <kbd>ESC</kbd>
+      </div>
+      <div id="cmd-palette-results" class="cmd-results"></div>
+    </div>
+  </div>
+
+  <script type="module" src="js/app.js?v=3"></script>
+</body>
+</html>

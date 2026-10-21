@@ -1,0 +1,262 @@
+[
+  {
+    "code": "QUA",
+    "name": "Quadrantids",
+    "names": {
+      "fr": "Quadrantides",
+      "en": "Quadrantids",
+      "es": "Cuadrántidas",
+      "de": "Quadrantiden"
+    },
+    "ra": 230.1,
+    "dec": 48.5,
+    "driftRa": 0.6,
+    "driftDec": -0.2,
+    "solarLonPeak": 283.16,
+    "solarLonStart": 276.0,
+    "solarLonEnd": 292.0,
+    "zhr": 110,
+    "vInfKmS": 41.0,
+    "parentBody": "2003 EH1"
+  },
+  {
+    "code": "LYR",
+    "name": "Lyrids",
+    "names": {
+      "fr": "Lyrides",
+      "en": "Lyrids",
+      "es": "Líridas",
+      "de": "Lyriden"
+    },
+    "ra": 271.4,
+    "dec": 33.6,
+    "driftRa": 1.1,
+    "driftDec": 0.0,
+    "solarLonPeak": 32.32,
+    "solarLonStart": 24.0,
+    "solarLonEnd": 39.0,
+    "zhr": 18,
+    "vInfKmS": 49.0,
+    "parentBody": "C/1861 G1 (Thatcher)"
+  },
+  {
+    "code": "ETA",
+    "name": "Eta Aquariids",
+    "names": {
+      "fr": "Êta Aquarides",
+      "en": "Eta Aquariids",
+      "es": "Eta Acuáridas",
+      "de": "Eta-Aquariiden"
+    },
+    "ra": 338.0,
+    "dec": -1.0,
+    "driftRa": 0.9,
+    "driftDec": 0.4,
+    "solarLonPeak": 45.5,
+    "solarLonStart": 29.0,
+    "solarLonEnd": 67.0,
+    "zhr": 50,
+    "vInfKmS": 66.0,
+    "parentBody": "1P/Halley"
+  },
+  {
+    "code": "SDA",
+    "name": "Southern Delta Aquariids",
+    "names": {
+      "fr": "Delta Aquarides du Sud",
+      "en": "Southern Delta Aquariids",
+      "es": "Delta Acuáridas Australes",
+      "de": "Südliche Delta-Aquariiden"
+    },
+    "ra": 340.0,
+    "dec": -16.4,
+    "driftRa": 0.8,
+    "driftDec": 0.2,
+    "solarLonPeak": 127.0,
+    "solarLonStart": 110.0,
+    "solarLonEnd": 150.0,
+    "zhr": 25,
+    "vInfKmS": 41.0,
+    "parentBody": "96P/Machholz"
+  },
+  {
+    "code": "CAP",
+    "name": "Alpha Capricornids",
+    "names": {
+      "fr": "Alpha Capricornides",
+      "en": "Alpha Capricornids",
+      "es": "Alfa Capricórnidas",
+      "de": "Alpha-Capricorniden"
+    },
+    "ra": 307.0,
+    "dec": -10.0,
+    "driftRa": 0.9,
+    "driftDec": 0.3,
+    "solarLonPeak": 127.0,
+    "solarLonStart": 101.0,
+    "solarLonEnd": 142.0,
+    "zhr": 5,
+    "vInfKmS": 23.0,
+    "parentBody": "169P/NEAT"
+  },
+  {
+    "code": "PER",
+    "name": "Perseids",
+    "names": {
+      "fr": "Perséides",
+      "en": "Perseids",
+      "es": "Perseidas",
+      "de": "Perseiden"
+    },
+    "ra": 48.0,
+    "dec": 58.0,
+    "driftRa": 1.35,
+    "driftDec": 0.12,
+    "solarLonPeak": 140.0,
+    "solarLonStart": 114.0,
+    "solarLonEnd": 151.0,
+    "zhr": 100,
+    "vInfKmS": 59.0,
+    "parentBody": "109P/Swift-Tuttle"
+  },
+  {
+    "code": "DRA",
+    "name": "Draconids",
+    "names": {
+      "fr": "Draconides",
+      "en": "Draconids",
+      "es": "Dracónidas",
+      "de": "Draconiden"
+    },
+    "ra": 262.0,
+    "dec": 54.0,
+    "driftRa": 0.3,
+    "driftDec": -0.1,
+    "solarLonPeak": 195.4,
+    "solarLonStart": 193.0,
+    "solarLonEnd": 197.0,
+    "zhr": 10,
+    "vInfKmS": 20.0,
+    "parentBody": "21P/Giacobini-Zinner"
+  },
+  {
+    "code": "ORI",
+    "name": "Orionids",
+    "names": {
+      "fr": "Orionides",
+      "en": "Orionids",
+      "es": "Oriónidas",
+      "de": "Orioniden"
+    },
+    "ra": 95.0,
+    "dec": 16.0,
+    "driftRa": 0.7,
+    "driftDec": 0.1,
+    "solarLonPeak": 208.0,
+    "solarLonStart": 189.0,
+    "solarLonEnd": 225.0,
+    "zhr": 20,
+    "vInfKmS": 66.0,
+    "parentBody": "1P/Halley"
+  },
+  {
+    "code": "STA",
+    "name": "Southern Taurids",
+    "names": {
+      "fr": "Taurides du Sud",
+      "en": "Southern Taurids",
+      "es": "Táuridas Australes",
+      "de": "Südliche Tauriden"
+    },
+    "ra": 50.5,
+    "dec": 13.6,
+    "driftRa": 0.8,
+    "driftDec": 0.2,
+    "solarLonPeak": 223.0,
+    "solarLonStart": 168.0,
+    "solarLonEnd": 247.0,
+    "zhr": 5,
+    "vInfKmS": 27.0,
+    "parentBody": "2P/Encke"
+  },
+  {
+    "code": "NTA",
+    "name": "Northern Taurids",
+    "names": {
+      "fr": "Taurides du Nord",
+      "en": "Northern Taurids",
+      "es": "Táuridas Boreales",
+      "de": "Nördliche Tauriden"
+    },
+    "ra": 58.0,
+    "dec": 22.0,
+    "driftRa": 0.8,
+    "driftDec": 0.2,
+    "solarLonPeak": 230.0,
+    "solarLonStart": 206.0,
+    "solarLonEnd": 258.0,
+    "zhr": 5,
+    "vInfKmS": 29.0,
+    "parentBody": "2004 TG10"
+  },
+  {
+    "code": "LEO",
+    "name": "Leonids",
+    "names": {
+      "fr": "Léonides",
+      "en": "Leonids",
+      "es": "Leónidas",
+      "de": "Leoniden"
+    },
+    "ra": 152.3,
+    "dec": 21.8,
+    "driftRa": 0.7,
+    "driftDec": -0.4,
+    "solarLonPeak": 235.27,
+    "solarLonStart": 224.0,
+    "solarLonEnd": 248.0,
+    "zhr": 15,
+    "vInfKmS": 71.0,
+    "parentBody": "55P/Tempel-Tuttle"
+  },
+  {
+    "code": "GEM",
+    "name": "Geminids",
+    "names": {
+      "fr": "Géminides",
+      "en": "Geminids",
+      "es": "Gemínidas",
+      "de": "Geminiden"
+    },
+    "ra": 112.3,
+    "dec": 32.5,
+    "driftRa": 1.0,
+    "driftDec": -0.1,
+    "solarLonPeak": 262.2,
+    "solarLonStart": 252.0,
+    "solarLonEnd": 268.0,
+    "zhr": 150,
+    "vInfKmS": 35.0,
+    "parentBody": "(3200) Phaethon"
+  },
+  {
+    "code": "URS",
+    "name": "Ursids",
+    "names": {
+      "fr": "Ursides",
+      "en": "Ursids",
+      "es": "Úrsidas",
+      "de": "Ursiden"
+    },
+    "ra": 217.0,
+    "dec": 75.4,
+    "driftRa": 0.2,
+    "driftDec": -0.1,
+    "solarLonPeak": 270.7,
+    "solarLonStart": 265.0,
+    "solarLonEnd": 275.0,
+    "zhr": 10,
+    "vInfKmS": 33.0,
+    "parentBody": "8P/Tuttle"
+  }
+]
