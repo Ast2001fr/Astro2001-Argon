@@ -48,6 +48,113 @@ export const VIEWS = [
     defaultFov: 45,
     minFov: 5,
     maxFov: 90
+  },
+  {
+    id: 'zenith',
+    key: '5',
+    code: 'Digit5',
+    i18nKey: 'views.zenith',
+    descKey: 'views.zenithDesc',
+    icon: 'zenith',
+    defaultFov: 180,
+    minFov: 15,
+    maxFov: 185
+  }
+];
+
+export const LAYER_PROFILES = [
+  {
+    id: 'discover',
+    nameFr: 'Découvrir',
+    nameEn: 'Discover',
+    descFr: 'Le ciel tel qu’on le voit à l’œil nu : figures des constellations, Voie lactée, planètes et objets brillants.',
+    descEn: 'The sky as seen with the naked eye: constellation lines, Milky Way, planets and bright showpieces.',
+    toggles: {
+      stars: true,
+      doubleStars: false,
+      variableStars: false,
+      dso: true,
+      dsoPhotos: true,
+      milkyWay: true,
+      dssHips: false,
+      constellationLines: true,
+      constellationNames: true,
+      constellationBounds: false,
+      gridAzimuthal: false,
+      gridEquatorial: false,
+      ecliptic: false,
+      planets: true,
+      asteroids: false,
+      satellites: true,
+      meteors: false,
+      atmosphere: true,
+      ground: true,
+      horizonProfile: true,
+      cardinals: true,
+      realPlanetSizes: false
+    }
+  },
+  {
+    id: 'observe',
+    nameFr: 'Observer',
+    nameEn: 'Observe',
+    descFr: 'Préparer une soirée au télescope : ciel profond complet, étoiles doubles et variables, essaims et satellites.',
+    descEn: 'For telescope sessions: full deep-sky catalogue, double & variable stars, meteor showers and satellites.',
+    toggles: {
+      stars: true,
+      doubleStars: true,
+      variableStars: true,
+      dso: true,
+      dsoPhotos: true,
+      milkyWay: true,
+      dssHips: false,
+      constellationLines: true,
+      constellationNames: true,
+      constellationBounds: false,
+      gridAzimuthal: false,
+      gridEquatorial: false,
+      ecliptic: true,
+      planets: true,
+      asteroids: true,
+      satellites: true,
+      meteors: true,
+      atmosphere: true,
+      ground: true,
+      horizonProfile: true,
+      cardinals: true,
+      realPlanetSizes: false
+    }
+  },
+  {
+    id: 'chart',
+    nameFr: 'Cartographier',
+    nameEn: 'Chart',
+    descFr: 'Atlas de précision : grille équatoriale, limites UAI officielles, écliptique, sans atmosphère.',
+    descEn: 'Precision sky atlas: equatorial grid, official IAU boundaries, ecliptic, atmosphere off.',
+    toggles: {
+      stars: true,
+      doubleStars: true,
+      variableStars: true,
+      dso: true,
+      dsoPhotos: false,
+      milkyWay: true,
+      dssHips: false,
+      constellationLines: true,
+      constellationNames: true,
+      constellationBounds: true,
+      gridAzimuthal: false,
+      gridEquatorial: true,
+      ecliptic: true,
+      planets: true,
+      asteroids: true,
+      satellites: false,
+      meteors: false,
+      atmosphere: false,
+      ground: true,
+      horizonProfile: true,
+      cardinals: true,
+      realPlanetSizes: false
+    }
   }
 ];
 

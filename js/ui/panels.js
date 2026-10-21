@@ -42,23 +42,40 @@ export class PanelsUI {
 
   _bindGlobalModalEvents() {
     document.getElementById('modal-close')?.addEventListener('click', () => this.closePanel());
-    this.modalOverlay?.addEventListener('click', (e) => {
-      if (e.target === this.modalOverlay) this.closePanel();
-    });
+    document.getElementById('drawer-fold-btn')?.addEventListener('click', () => this.closePanel());
   }
 
   t(key, fallback) {
     return this.app.t ? this.app.t(key, fallback) : (fallback || key);
   }
 
-  openPanel(panelId) {
+  _syncRailActiveState() {
+    document.querySelectorAll('.rail-btn[data-panel]').forEach(btn => {
+      const pid = btn.getAttribute('data-panel');
+      const isMatch = pid === this.activePanelId ||
+        (pid === 'tonight' && ['tonight', 'twilight', 'weather', 'events', 'satellites'].includes(this.activePanelId)) ||
+        (pid === 'location' && ['location', 'horizon'].includes(this.activePanelId));
+      btn.classList.toggle('active', isMatch);
+      btn.setAttribute('aria-pressed', isMatch ? 'true' : 'false');
+    });
+  }
+
+  openPanel(panelId, forceOpen = false) {
     if (!this.modalOverlay || !this.modalBody) return;
+    if (!forceOpen && this.activePanelId === panelId && !this.modalOverlay.classList.contains('hidden')) {
+      this.closePanel();
+      return;
+    }
     this.activePanelId = panelId;
     this.modalOverlay.classList.remove('hidden');
+    this._syncRailActiveState();
 
     switch (panelId) {
       case 'tonight':
         this.renderTonightPanel();
+        break;
+      case 'layers':
+        this.renderLayersPanel();
         break;
       case 'twilight':
         this.renderTwilightPanel();
@@ -95,37 +112,230 @@ export class PanelsUI {
   closePanel() {
     this.activePanelId = null;
     this.modalOverlay?.classList.add('hidden');
+    this._syncRailActiveState();
   }
 
   /* ==========================================================================
-   * 1. PANNEAU « VISIBILITÉ — NUIT PROCHAINE » (Frise / Tableau)
+   * 0. PANNEAU « CALQUES & PROFILS » (Découvrir, Observer, Cartographier + Fond DSS2/Intégré)
+   * ========================================================================== */
+  renderLayersPanel() {
+    const t = (k, fb) => this.t(k, fb);
+    this.modalTitle.textContent = t('panels.layersTitle', 'Calques & Profils d’affichage');
+
+    const toggles = this.app.state.toggles;
+    const activeProfile = this.app.state.activeProfile || 'observe';
+    const dssOn = !!toggles.dssHips;
+    const mwBri = Math.round((this.app.state.milkyWayBrightness ?? 1.0) * 100);
+
+    const profiles = [
+      {
+        id: 'discover',
+        title: 'Découvrir',
+        sub: 'Œil nu & repérage',
+        desc: 'Le ciel tel qu’on le voit à l’œil nu : figures des constellations, Voie lactée, planètes et astres brillants.'
+      },
+      {
+        id: 'observe',
+        title: 'Observer',
+        sub: 'Soirée à l’instrument',
+        desc: 'Ciel profond au complet, étoiles doubles (WDS) et variables (GCVS), essaims, astéroïdes et satellites.'
+      },
+      {
+        id: 'chart',
+        title: 'Cartographier',
+        sub: 'Atlas de précision',
+        desc: 'Grille équatoriale, limites officielles UAI des 88 constellations, écliptique, sans atmosphère.'
+      }
+    ];
+
+    const layerGroups = [
+      {
+        group: 'Ciel & Catalogues',
+        items: [
+          { key: 'stars', label: 'Étoiles (ATHYG · 871 136)', kbd: 'S' },
+          { key: 'dso', label: 'Ciel profond (OpenNGC · 15 618)', kbd: 'N' },
+          { key: 'dsoPhotos', label: 'Photographies DSO (135)', kbd: 'I' },
+          { key: 'doubleStars', label: 'Étoiles doubles (WDS · 3 309)', kbd: 'W' },
+          { key: 'variableStars', label: 'Variables (GCVS · 882)', kbd: 'Y' },
+          { key: 'milkyWay', label: 'Panorama Voie lactée', kbd: 'M' },
+          { key: 'dssHips', label: 'Relevé photographique DSS2 (CDS)', kbd: 'D' }
+        ]
+      },
+      {
+        group: 'Constellations & Grilles',
+        items: [
+          { key: 'constellationLines', label: 'Figures des constellations', kbd: 'C' },
+          { key: 'constellationNames', label: 'Noms des constellations', kbd: 'V' },
+          { key: 'constellationBounds', label: 'Limites officielles UAI', kbd: 'B' },
+          { key: 'gridAzimuthal', label: 'Grille azimutale (Alt/Az)', kbd: 'Z' },
+          { key: 'gridEquatorial', label: 'Grille équatoriale (AD/Déc)', kbd: 'E' },
+          { key: 'ecliptic', label: 'Ligne de l’écliptique', kbd: ',' }
+        ]
+      },
+      {
+        group: 'Système solaire, Satellites & Site',
+        items: [
+          { key: 'planets', label: 'Soleil, Lune & Planètes', kbd: 'P' },
+          { key: 'realPlanetSizes', label: 'Tailles planétaires réelles / lisibles', kbd: 'U' },
+          { key: 'asteroids', label: 'Astéroïdes brillants (8)', kbd: 'A' },
+          { key: 'satellites', label: 'ISS & Satellites SGP4 (177)', kbd: 'O' },
+          { key: 'meteors', label: 'Essaims de météores (13)', kbd: 'R' },
+          { key: 'atmosphere', label: 'Atmosphère, crépuscule & Bortle', kbd: 'F' },
+          { key: 'ground', label: 'Sol opaque', kbd: 'G' },
+          { key: 'horizonProfile', label: 'Relief « Mon horizon »', kbd: 'H' },
+          { key: 'cardinals', label: 'Points cardinaux', kbd: 'Q' }
+        ]
+      }
+    ];
+
+    this.modalBody.innerHTML = `
+      <div class="drawer-section">
+        <div class="drawer-sec-title">Trois profils expliqués</div>
+        <div class="profile-cards-grid">
+          ${profiles.map(p => `
+            <button type="button" class="profile-card ${activeProfile === p.id ? 'active' : ''}" data-profile="${p.id}">
+              <div class="profile-card-top">
+                <strong>${p.title}</strong>
+                <span>${p.sub}</span>
+              </div>
+              <p>${p.desc}</p>
+            </button>
+          `).join('')}
+        </div>
+      </div>
+
+      <div class="drawer-section">
+        <div class="drawer-sec-title">Fond photographique du ciel</div>
+        <div class="seg-control">
+          <button type="button" class="seg-btn ${!dssOn ? 'active' : ''}" id="bg-mode-local">
+            Intégré (Voie lactée + 135 photos · sans réseau)
+          </button>
+          <button type="button" class="seg-btn ${dssOn ? 'active' : ''}" id="bg-mode-dss">
+            En ligne (Tuiles HiPS DSS2 couleur · CDS)
+          </button>
+        </div>
+        <div class="slider-inline-row" style="margin-top:10px;">
+          <span>Luminosité Voie lactée</span>
+          <input type="range" id="mw-brightness-slider" min="0" max="150" step="5" value="${mwBri}">
+          <span class="mono" id="mw-brightness-val">${mwBri}%</span>
+        </div>
+      </div>
+
+      ${layerGroups.map(g => `
+        <div class="drawer-section">
+          <div class="drawer-sec-title">${g.group}</div>
+          <div class="layer-tiles-grid">
+            ${g.items.map(item => `
+              <button type="button" class="layer-tile ${toggles[item.key] ? 'active' : ''}" data-layer-key="${item.key}">
+                <span class="layer-tile-dot"></span>
+                <span class="layer-tile-label">${item.label}</span>
+                <kbd class="layer-tile-kbd">${item.kbd}</kbd>
+              </button>
+            `).join('')}
+          </div>
+        </div>
+      `).join('')}
+    `;
+
+    this.modalBody.querySelectorAll('[data-profile]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const pid = btn.getAttribute('data-profile');
+        this.app.applyLayerProfile(pid);
+        this.renderLayersPanel();
+      });
+    });
+
+    this.modalBody.querySelector('#bg-mode-local')?.addEventListener('click', () => {
+      this.app.state.toggles.dssHips = false;
+      this.app.state.toggles.milkyWay = true;
+      this.app.state.toggles.dsoPhotos = true;
+      this.app.syncToggleButtons();
+      this.app.saveSettings();
+      this.app.requestRender();
+      this.renderLayersPanel();
+    });
+
+    this.modalBody.querySelector('#bg-mode-dss')?.addEventListener('click', () => {
+      this.app.state.toggles.dssHips = true;
+      this.app.syncToggleButtons();
+      this.app.saveSettings();
+      this.app.requestRender();
+      this.renderLayersPanel();
+    });
+
+    this.modalBody.querySelector('#mw-brightness-slider')?.addEventListener('input', (e) => {
+      const v = Number(e.target.value);
+      this.app.state.milkyWayBrightness = v / 100;
+      const lbl = this.modalBody.querySelector('#mw-brightness-val');
+      if (lbl) lbl.textContent = `${v}%`;
+      this.app.saveSettings();
+      this.app.requestRender();
+    });
+
+    this.modalBody.querySelectorAll('[data-layer-key]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const k = btn.getAttribute('data-layer-key');
+        this.app.toggleLayer(k);
+        this.renderLayersPanel();
+      });
+    });
+  }
+
+  /* ==========================================================================
+   * 1. PANNEAU « ÉPHÉMÉRIDES & VISIBILITÉ — NUIT PROCHAINE » (Frise / Tableau)
    * ========================================================================== */
   renderTonightPanel() {
     const t = (k, fb) => this.t(k, fb);
-    this.modalTitle.textContent = t('panels.tonightTitle', 'Visibilité — nuit prochaine');
+    this.modalTitle.textContent = t('panels.tonightTitle', 'Éphémérides & Visibilité — Cette nuit');
 
     const baseDate = new Date(this.app.state.date.getTime() + this.tonightDayOffset * 86400000);
     const nightData = this.app.computeTonightVisibilityData(baseDate, this.tonightCategory);
+    const moonPct = Math.round(nightData.moonIllum * 100);
+    const bortle = this.app.state.bortleClass || 4;
+    const nightSentence = moonPct < 22
+      ? `Une nuit idéale pour le ciel profond : Lune discrète (${moonPct}%), vraie nuit noire ${nightData.twilight.astroDuskStr} → ${nightData.twilight.astroDawnStr}.`
+      : moonPct < 65
+        ? `Une nuit partagée entre planètes et ciel profond : Lune à ${moonPct}% (${nightData.moonPhaseLabel}), nuit noire ${nightData.twilight.astroDuskStr} → ${nightData.twilight.astroDawnStr}.`
+        : `Une nuit de Lune (${moonPct}%) et de planètes brillantes : privilégiez les amas ouverts, étoiles doubles et planètes.`;
 
     this.modalBody.innerHTML = `
+      <div class="eph-subnav">
+        <button class="eph-tab active" data-open-sub="tonight">La nuit</button>
+        <button class="eph-tab" data-open-sub="twilight">Crépuscules</button>
+        <button class="eph-tab" data-open-sub="weather">Conditions & Météo</button>
+        <button class="eph-tab" data-open-sub="events">Éclipses & Calendrier</button>
+        <button class="eph-tab" data-open-sub="satellites">Stations ISS & SGP4</button>
+      </div>
+
+      <div class="night-sentence-card">
+        <div class="night-sentence-text">« ${nightSentence} »</div>
+        <div class="night-sentence-meta">
+          <span>Site : <strong>${this.app.state.observer.name}</strong></span>
+          <span>·</span>
+          <span>Bortle <strong>${bortle}</strong></span>
+          <span>·</span>
+          <span>Durée noire : <strong>${nightData.twilight.darkDurationStr}</strong></span>
+        </div>
+      </div>
+
       <div class="panel-toolbar">
         <div class="btn-group">
-          <button class="btn-secondary" id="tonight-prev">◀ ${t('tonight.prevNight', 'Nuit précédente')}</button>
-          <button class="btn-secondary" id="tonight-reset">${ nightData.dateLabel }</button>
-          <button class="btn-secondary" id="tonight-next">${t('tonight.nextNight', 'Nuit suivante')} ▶</button>
+          <button class="btn-secondary" id="tonight-prev" title="Nuit précédente">‹ 1 j</button>
+          <button class="btn-secondary" id="tonight-reset">${nightData.dateLabel}</button>
+          <button class="btn-secondary" id="tonight-next" title="Nuit suivante">1 j ›</button>
         </div>
         <div class="btn-group">
           <select id="tonight-cat-select" class="select-input">
-            <option value="all" ${this.tonightCategory === 'all' ? 'selected' : ''}>${t('tonight.catAll', 'Tous les astres')}</option>
+            <option value="all" ${this.tonightCategory === 'all' ? 'selected' : ''}>${t('tonight.catAll', 'Toutes les cibles')}</option>
             <option value="planets" ${this.tonightCategory === 'planets' ? 'selected' : ''}>${t('tonight.catPlanets', 'Planètes & Lune')}</option>
-            <option value="messier" ${this.tonightCategory === 'messier' ? 'selected' : ''}>${t('tonight.catMessier', 'Ciel profond (Messier / NGC)')}</option>
+            <option value="messier" ${this.tonightCategory === 'messier' ? 'selected' : ''}>${t('tonight.catMessier', 'Ciel profond')}</option>
             <option value="stars" ${this.tonightCategory === 'stars' ? 'selected' : ''}>${t('tonight.catStars', 'Étoiles brillantes')}</option>
           </select>
           <button class="btn-toggle ${this.tonightMode === 'frise' ? 'active' : ''}" id="tonight-mode-frise">
-            📈 ${t('tonight.frise', 'Frise')}
+            ${t('tonight.frise', 'Frise')}
           </button>
           <button class="btn-toggle ${this.tonightMode === 'tableau' ? 'active' : ''}" id="tonight-mode-tableau">
-            📋 ${t('tonight.tableau', 'Tableau')}
+            ${t('tonight.tableau', 'Tableau')}
           </button>
         </div>
       </div>
@@ -133,20 +343,20 @@ export class PanelsUI {
       <!-- Bandeau résumé de la nuit -->
       <div class="tonight-summary-banner">
         <div class="summary-chip">
-          <span class="chip-label">🌅 ${t('twilight.sunset', 'Coucher du Soleil')}</span>
-          <strong>${nightData.twilight.sunsetStr}</strong>
+          <span class="chip-label">${t('twilight.sunset', 'Coucher du Soleil')}</span>
+          <strong class="mono">${nightData.twilight.sunsetStr}</strong>
         </div>
         <div class="summary-chip highlight">
-          <span class="chip-label">🌌 ${t('tonight.trueNight', 'Vraie nuit (astronomique)')}</span>
-          <strong>${nightData.twilight.astroDuskStr} → ${nightData.twilight.astroDawnStr} (${nightData.twilight.darkDurationStr})</strong>
+          <span class="chip-label">${t('tonight.trueNight', 'Vraie nuit noire')}</span>
+          <strong class="mono">${nightData.twilight.astroDuskStr} → ${nightData.twilight.astroDawnStr}</strong>
         </div>
         <div class="summary-chip">
-          <span class="chip-label">🌄 ${t('twilight.sunrise', 'Lever du Soleil')}</span>
-          <strong>${nightData.twilight.sunriseStr}</strong>
+          <span class="chip-label">${t('twilight.sunrise', 'Lever du Soleil')}</span>
+          <strong class="mono">${nightData.twilight.sunriseStr}</strong>
         </div>
         <div class="summary-chip">
-          <span class="chip-label">🌙 ${t('tonight.moonIllum', 'Lune')}</span>
-          <strong>${Math.round(nightData.moonIllum * 100)}% (${nightData.moonPhaseLabel})</strong>
+          <span class="chip-label">${t('tonight.moonIllum', 'Lune')}</span>
+          <strong>${moonPct}% (${nightData.moonPhaseLabel})</strong>
         </div>
       </div>
 
@@ -225,13 +435,42 @@ export class PanelsUI {
       btn.addEventListener('click', () => {
         const id = btn.getAttribute('data-select-obj');
         this.app.findAndCenterObjectById(id);
-        this.closePanel();
       });
     });
+
+    this._bindEphSubnav();
 
     if (this.tonightMode === 'frise') {
       this._drawTonightAltitudeChart(nightData);
     }
+  }
+
+  _renderEphSubnav(activeId) {
+    const tabs = [
+      { id: 'tonight', label: 'La nuit' },
+      { id: 'twilight', label: 'Crépuscules' },
+      { id: 'weather', label: 'Météo 48 h' },
+      { id: 'events', label: 'Éclipses & Calendrier' },
+      { id: 'satellites', label: 'ISS & Satellites' }
+    ];
+    return `
+      <div class="eph-subnav">
+        ${tabs.map(tab => `
+          <button class="eph-tab ${tab.id === activeId ? 'active' : ''}" data-open-sub="${tab.id}">${tab.label}</button>
+        `).join('')}
+      </div>
+    `;
+  }
+
+  _bindEphSubnav() {
+    this.modalBody.querySelectorAll('[data-open-sub]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const target = btn.getAttribute('data-open-sub');
+        if (target && target !== this.activePanel) {
+          this.openPanel(target);
+        }
+      });
+    });
   }
 
   _drawTonightAltitudeChart(nightData) {
@@ -247,8 +486,7 @@ export class PanelsUI {
 
     ctx.clearRect(0, 0, w, h);
 
-    // Draw twilight & true night background bands across the 14-hour span (17:00 to 07:00)
-    const samples = nightData.skySamples; // array of { frac, sunAlt, hourLabel }
+    const samples = nightData.skySamples;
     for (let i = 0; i < samples.length - 1; i++) {
       const s = samples[i];
       const x0 = padL + (i / (samples.length - 1)) * plotW;
@@ -257,11 +495,11 @@ export class PanelsUI {
       if (nightVision) {
         fill = s.sunAlt < -18 ? '#0a0000' : s.sunAlt < -6 ? '#1c0402' : '#300805';
       } else if (s.sunAlt <= -18) {
-        fill = '#050a16'; // Vraie nuit astronomique
+        fill = '#050a16';
       } else if (s.sunAlt <= -12) {
-        fill = '#0b152b'; // Nautique
+        fill = '#0b152b';
       } else if (s.sunAlt <= -6) {
-        fill = '#152547'; // Civil
+        fill = '#152547';
       } else if (s.sunAlt <= 0) {
         fill = '#2a3963';
       }
@@ -269,10 +507,9 @@ export class PanelsUI {
       ctx.fillRect(x0, padT, x1 - x0 + 1, plotH);
     }
 
-    // Horizontal altitude grid lines (0°, 30°, 60°, 90°)
     ctx.strokeStyle = nightVision ? 'rgba(200, 40, 30, 0.25)' : 'rgba(150, 185, 235, 0.18)';
     ctx.fillStyle = nightVision ? '#d95540' : '#9ab4d8';
-    ctx.font = '11px system-ui, sans-serif';
+    ctx.font = '11px "IBM Plex Mono", monospace';
     ctx.lineWidth = 1;
 
     for (let alt = 0; alt <= 90; alt += 15) {
@@ -282,11 +519,10 @@ export class PanelsUI {
       ctx.lineTo(padL + plotW, y);
       ctx.stroke();
       if (alt % 30 === 0) {
-        ctx.fillText(`${alt}°`, 10, y + 4);
+        ctx.fillText(`${alt}°`, 8, y + 4);
       }
     }
 
-    // Vertical hour ticks
     samples.forEach((s, idx) => {
       if (idx % 4 === 0) {
         const x = padL + (idx / (samples.length - 1)) * plotW;
@@ -298,7 +534,6 @@ export class PanelsUI {
       }
     });
 
-    // Plot each object's altitude curve
     const palette = nightVision
       ? ['#ff4428', '#ff6848', '#ff8866', '#d9321e', '#ff9980', '#e05038', '#ffa890']
       : ['#ffd15c', '#5ce1ff', '#ff7e6b', '#7dffb3', '#d094ff', '#ffb86c', '#9ec5ff', '#ff85b3'];
@@ -337,12 +572,11 @@ export class PanelsUI {
       ctx.stroke();
 
       if (peakPt && peakPt.alt > 8) {
-        ctx.font = '600 11px system-ui, sans-serif';
+        ctx.font = '600 11px "IBM Plex Sans", system-ui, sans-serif';
         ctx.fillText(item.name, Math.min(padL + plotW - 65, Math.max(padL + 6, peakPt.x - 16)), Math.max(padT + 14, peakPt.y - 6));
       }
     });
 
-    // Draw "Maintenant" vertical marker if current simulation time falls within this night window
     if (nightData.nowFraction !== null && nightData.nowFraction >= 0 && nightData.nowFraction <= 1) {
       const nowX = padL + nightData.nowFraction * plotW;
       ctx.strokeStyle = nightVision ? '#ff2211' : '#ff4d4d';
@@ -354,13 +588,12 @@ export class PanelsUI {
       ctx.stroke();
       ctx.setLineDash([]);
       ctx.fillStyle = nightVision ? '#ff5540' : '#ff6b6b';
-      ctx.font = '700 10.5px system-ui, sans-serif';
+      ctx.font = '700 10.5px "IBM Plex Sans", system-ui, sans-serif';
       ctx.fillText(this.t('tonight.now', 'Maintenant'), Math.min(padL + plotW - 65, nowX + 5), padT + 14);
     }
 
     ctx.restore();
 
-    // Click on chart to jump simulation time to clicked hour!
     canvas.onclick = (e) => {
       const rect = canvas.getBoundingClientRect();
       const scaleX = w / rect.width;
@@ -384,9 +617,11 @@ export class PanelsUI {
     const tw = this.app.computeTwilightsForCurrentDate();
 
     this.modalBody.innerHTML = `
+      ${this._renderEphSubnav('twilight')}
+
       <div class="twilight-grid">
         <div class="twilight-card">
-          <h4>🌇 ${t('twilight.evening', 'Soir (Coucher → Nuit)')}</h4>
+          <h4>${t('twilight.evening', 'Soir (Coucher → Nuit noire)')}</h4>
           <div class="obj-kv-list">
             <div class="obj-kv-row">
               <span>${t('twilight.sunset', 'Coucher du Soleil (0°)')}</span>
@@ -408,7 +643,7 @@ export class PanelsUI {
         </div>
 
         <div class="twilight-card">
-          <h4>🌄 ${t('twilight.morning', 'Matin (Nuit → Lever)')}</h4>
+          <h4>${t('twilight.morning', 'Matin (Nuit noire → Lever)')}</h4>
           <div class="obj-kv-list">
             <div class="obj-kv-row highlight-row">
               <span>${t('twilight.astroDawn', 'Fin vraie nuit astronomique (−18°)')}</span>
@@ -433,18 +668,19 @@ export class PanelsUI {
       <div class="tonight-summary-banner" style="margin-top: 14px;">
         <div class="summary-chip">
           <span class="chip-label">${t('twilight.solarMidnight', 'Minuit solaire (anti-culmination)')}</span>
-          <strong>${tw.solarMidnightStr} (${tw.minSunAlt.toFixed(1)}°)</strong>
+          <strong class="mono">${tw.solarMidnightStr} (${tw.minSunAlt.toFixed(1)}°)</strong>
         </div>
         <div class="summary-chip highlight">
           <span class="chip-label">${t('twilight.darkDuration', 'Durée de vraie nuit noire')}</span>
-          <strong>${tw.darkDurationStr}</strong>
+          <strong class="mono">${tw.darkDurationStr}</strong>
         </div>
         <div class="summary-chip">
           <span class="chip-label">${t('twilight.currentSunAlt', 'Hauteur actuelle du Soleil')}</span>
-          <strong>${tw.currentSunAlt.toFixed(2)}° (${tw.currentRegimeLabel})</strong>
+          <strong class="mono">${tw.currentSunAlt.toFixed(2)}° (${tw.currentRegimeLabel})</strong>
         </div>
       </div>
     `;
+    this._bindEphSubnav();
   }
 
   /* ==========================================================================
@@ -459,14 +695,20 @@ export class PanelsUI {
 
     if (!navigator.onLine && !this.weatherCache.has(key)) {
       this.modalBody.innerHTML = `
+        ${this._renderEphSubnav('weather')}
         <div class="offline-quiet-notice">
-          <p>☁️ ${t('weather.offlineSilent', 'Mode hors ligne : les prévisions de nébulosité Open-Meteo reprendront automatiquement dès le retour de la connexion.')}</p>
+          <p>${t('weather.offlineSilent', 'Mode hors ligne : les prévisions de nébulosité Open-Meteo reprendront automatiquement dès le retour de la connexion.')}</p>
         </div>
       `;
+      this._bindEphSubnav();
       return;
     }
 
-    this.modalBody.innerHTML = `<p class="muted">${t('weather.loading', 'Récupération de la nébulosité horaire Open-Meteo…')}</p>`;
+    this.modalBody.innerHTML = `
+      ${this._renderEphSubnav('weather')}
+      <p class="muted">${t('weather.loading', 'Récupération de la nébulosité horaire Open-Meteo…')}</p>
+    `;
+    this._bindEphSubnav();
 
     let data = this.weatherCache.get(key);
     if (!data) {
@@ -477,12 +719,13 @@ export class PanelsUI {
         data = await res.json();
         this.weatherCache.set(key, data);
       } catch (_) {
-        // Stay cleanly silent on error/offline
         this.modalBody.innerHTML = `
+          ${this._renderEphSubnav('weather')}
           <div class="offline-quiet-notice">
-            <p>☁️ ${t('weather.offlineSilent', 'Prévisions météo Open-Meteo indisponibles hors ligne.')}</p>
+            <p>${t('weather.offlineSilent', 'Prévisions météo Open-Meteo indisponibles hors ligne.')}</p>
           </div>
         `;
+        this._bindEphSubnav();
         return;
       }
     }
@@ -503,7 +746,7 @@ export class PanelsUI {
       const qualLabel = cc <= 20
         ? t('weather.clear', 'Ciel clair')
         : cc <= 55
-        ? t('weather.partial', 'Voiles / Partiel')
+        ? t('weather.partial', 'Voiles')
         : t('weather.overcast', 'Couvert');
       return `
         <tr>
@@ -522,6 +765,7 @@ export class PanelsUI {
     }).join('');
 
     this.modalBody.innerHTML = `
+      ${this._renderEphSubnav('weather')}
       <div class="tonight-summary-banner">
         <div class="summary-chip">
           <span class="chip-label">${t('location.place', 'Lieu observé')}</span>
@@ -532,21 +776,22 @@ export class PanelsUI {
           <strong>Open-Meteo (${t('weather.todayTomorrow', 'Aujourd\'hui + Demain')})</strong>
         </div>
       </div>
-      <div class="table-scroll" style="max-height: 410px;">
+      <div class="table-scroll" style="max-height: 440px;">
         <table class="astro-table">
           <thead>
             <tr>
-              <th>${t('weather.hour', 'Date & Heure')}</th>
-              <th>${t('weather.totalCloud', 'Nébulosité totale')}</th>
-              <th>${t('weather.layers', 'Basse / Moy. / Haute')}</th>
-              <th>${t('weather.humidity', 'Humidité')}</th>
-              <th>${t('weather.quality', 'Qualité astro')}</th>
+              <th>${t('weather.hour', 'Heure')}</th>
+              <th>${t('weather.totalCloud', 'Nébulosité')}</th>
+              <th>${t('weather.layers', 'Basse/Moy/Haute')}</th>
+              <th>${t('weather.humidity', 'Humid.')}</th>
+              <th>${t('weather.quality', 'Ciel')}</th>
             </tr>
           </thead>
           <tbody>${rowsHtml}</tbody>
         </table>
       </div>
     `;
+    this._bindEphSubnav();
   }
 
   /* ==========================================================================
@@ -554,7 +799,7 @@ export class PanelsUI {
    * ========================================================================== */
   renderSatellitesPanel() {
     const t = (k, fb) => this.t(k, fb);
-    this.modalTitle.textContent = t('panels.satellitesTitle', 'ISS & 177 Satellites brillants (SGP4 — Passages sur 4 jours)');
+    this.modalTitle.textContent = t('panels.satellitesTitle', 'ISS & 177 Satellites brillants (SGP4 — 4 jours)');
 
     const sats = this.app.state.catalogs.satellitesTle || [];
     const q = this.satSearchQuery.trim().toLowerCase();
@@ -566,19 +811,21 @@ export class PanelsUI {
     const passes = currentSat ? this.app.computeSatellitePasses4Days(currentSat) : [];
 
     this.modalBody.innerHTML = `
+      ${this._renderEphSubnav('satellites')}
+
       <div class="panel-toolbar">
         <div class="btn-group" style="flex: 1;">
           <input type="text" id="sat-search-input" class="text-input" placeholder="${t('satellites.searchPlaceholder', 'Filtrer parmi les 177 satellites (ISS, HST, Tiangong, Starlink…)')}" value="${this.satSearchQuery}">
-          <select id="sat-select" class="select-input" style="max-width: 260px;">
+          <select id="sat-select" class="select-input" style="max-width: 240px;">
             ${filteredSats.map(s => `
               <option value="${s.norad}" ${s.norad === (currentSat?.norad) ? 'selected' : ''}>
-                ${s.name} (NORAD ${s.norad})
+                ${s.name} (#${s.norad})
               </option>
             `).join('')}
           </select>
         </div>
         <button class="btn-secondary" id="btn-refresh-tle">
-          ↻ ${t('satellites.updateCelestrak', 'Actualiser TLE (Celestrak)')}
+          ↻ ${t('satellites.updateCelestrak', 'Celestrak TLE')}
         </button>
       </div>
 
@@ -586,15 +833,15 @@ export class PanelsUI {
         ${sats.length} ${t('satellites.loadedCount', 'satellites brillants chargés en SGP4')} · ${currentSat ? currentSat.name : ''}
       </div>
 
-      <div class="table-scroll" style="max-height: 390px;">
+      <div class="table-scroll" style="max-height: 410px;">
         <table class="astro-table">
           <thead>
             <tr>
-              <th>${t('satellites.date', 'Date & Début')}</th>
-              <th>${t('satellites.maxTime', 'Maximum')}</th>
-              <th>${t('satellites.maxElev', 'Élév. max')}</th>
-              <th>${t('satellites.azArc', 'Trajectoire (Az)')}</th>
-              <th>${t('satellites.condition', 'Visibilité')}</th>
+              <th>${t('satellites.date', 'Début')}</th>
+              <th>${t('satellites.maxTime', 'Max')}</th>
+              <th>${t('satellites.maxElev', 'Élév.')}</th>
+              <th>${t('satellites.azArc', 'Azimut')}</th>
+              <th>${t('satellites.condition', 'État')}</th>
               <th>Actions</th>
             </tr>
           </thead>
@@ -606,19 +853,19 @@ export class PanelsUI {
                 <td class="mono">${p.startStr}</td>
                 <td class="mono"><strong>${p.maxStr}</strong></td>
                 <td class="mono"><strong>${p.maxAlt.toFixed(1)}°</strong></td>
-                <td class="mono">${Math.round(p.startAz)}° → ${Math.round(p.maxAz)}° → ${Math.round(p.endAz)}°</td>
+                <td class="mono">${Math.round(p.startAz)}°→${Math.round(p.maxAz)}°→${Math.round(p.endAz)}°</td>
                 <td>
                   <span class="sat-tag tag-${p.tag}">
                     ${p.tag === 'visible'
-                      ? t('satellites.tagVisible', 'Visible (Nuit)')
+                      ? t('satellites.tagVisible', 'Visible')
                       : p.tag === 'daylight'
                       ? t('satellites.tagDay', 'Jour')
                       : t('satellites.tagEclipsed', 'Éclipsé')}
                   </span>
                 </td>
                 <td>
-                  <button class="btn-xs" data-plot-pass="${idx}">↝ ${t('actions.trace', 'Trajectoire')}</button>
-                  <button class="btn-xs primary" data-sim-pass="${idx}">▶ ${t('actions.simulate', 'Simuler')}</button>
+                  <button class="btn-xs" data-plot-pass="${idx}">${t('actions.trace', 'Tracer')}</button>
+                  <button class="btn-xs primary" data-sim-pass="${idx}">${t('actions.simulate', 'Simuler')}</button>
                 </td>
               </tr>
             `).join('')}
@@ -626,6 +873,8 @@ export class PanelsUI {
         </table>
       </div>
     `;
+
+    this._bindEphSubnav();
 
     this.modalBody.querySelector('#sat-search-input')?.addEventListener('input', (e) => {
       this.satSearchQuery = e.target.value;
@@ -664,7 +913,6 @@ export class PanelsUI {
         const pass = passes[idx];
         if (pass) {
           this.app.plotSatellitePass(currentSat, pass);
-          this.closePanel();
         }
       });
     });
@@ -675,7 +923,6 @@ export class PanelsUI {
         const pass = passes[idx];
         if (pass) {
           this.app.simulateSatellitePass(currentSat, pass);
-          this.closePanel();
         }
       });
     });
@@ -686,7 +933,7 @@ export class PanelsUI {
    * ========================================================================== */
   renderEventsPanel() {
     const t = (k, fb) => this.t(k, fb);
-    this.modalTitle.textContent = t('panels.eventsTitle', 'Éclipses, essaims de météores & calendrier d\'événements');
+    this.modalTitle.textContent = t('panels.eventsTitle', 'Éclipses, Essaims & Calendrier d\'événements');
 
     const events = this.app.computeEventsForYear(this.eventsYear);
     const meteors = this.app.computeMeteorsForYear(this.eventsYear);
@@ -696,38 +943,40 @@ export class PanelsUI {
       : events;
 
     this.modalBody.innerHTML = `
+      ${this._renderEphSubnav('events')}
+
       <div class="panel-toolbar">
         <div class="btn-group">
-          <button class="btn-secondary" id="ev-prev-year">◀ ${this.eventsYear - 1}</button>
-          <strong style="padding: 6px 12px;">${this.eventsYear}</strong>
-          <button class="btn-secondary" id="ev-next-year">${this.eventsYear + 1} ▶</button>
+          <button class="btn-secondary" id="ev-prev-year">‹ ${this.eventsYear - 1}</button>
+          <strong class="mono" style="padding: 6px 10px;">${this.eventsYear}</strong>
+          <button class="btn-secondary" id="ev-next-year">${this.eventsYear + 1} ›</button>
         </div>
         <div class="btn-group">
           <button class="btn-toggle ${this.eventsTab === 'calendar' ? 'active' : ''}" id="ev-tab-cal">
-            📅 ${t('events.allEvents', 'Calendrier complet')}
+            ${t('events.allEvents', 'Calendrier')}
           </button>
           <button class="btn-toggle ${this.eventsTab === 'eclipses' ? 'active' : ''}" id="ev-tab-ecl">
-            🌑 ${t('events.eclipsesOnly', 'Éclipses (Soleil & Lune)')}
+            ${t('events.eclipsesOnly', 'Éclipses')}
           </button>
           <button class="btn-toggle ${this.eventsTab === 'meteors' ? 'active' : ''}" id="ev-tab-met">
-            ☄️ ${t('events.meteorsTab', '13 Essaims de météores')}
+            ${t('events.meteorsTab', '13 Essaims')}
           </button>
         </div>
       </div>
 
       ${this.eventsTab === 'meteors' ? `
-        <p class="muted" style="margin-bottom: 10px;">
-          ${t('events.meteorsNote', 'Les dates de pic des 13 essaims sont calculées dynamiquement à partir de la longitude solaire (λ☉) pour l\'année sélectionnée.')}
+        <p class="muted" style="margin-bottom: 10px; font-size: 12px;">
+          ${t('events.meteorsNote', 'Dates de pic des 13 essaims calculées par longitude solaire (λ☉) pour l\'année sélectionnée.')}
         </p>
-        <div class="table-scroll" style="max-height: 400px;">
+        <div class="table-scroll" style="max-height: 410px;">
           <table class="astro-table">
             <thead>
               <tr>
                 <th>${t('events.showerName', 'Essaim')}</th>
-                <th>${t('events.solarLon', 'Pic λ☉')}</th>
-                <th>${t('events.peakDate', 'Date du pic')} (${this.eventsYear})</th>
-                <th>${t('events.zhr', 'Taux horaire (ZHR)')}</th>
-                <th>${t('events.radiant', 'Radiant (AD / Déc)')}</th>
+                <th>${t('events.solarLon', 'λ☉')}</th>
+                <th>${t('events.peakDate', 'Pic')} (${this.eventsYear})</th>
+                <th>${t('events.zhr', 'ZHR')}</th>
+                <th>${t('events.radiant', 'Radiant')}</th>
                 <th>Action</th>
               </tr>
             </thead>
@@ -737,10 +986,10 @@ export class PanelsUI {
                   <td><strong>${m.name}</strong> <span class="muted">(${m.code})</span></td>
                   <td class="mono">${m.solarLonPeak.toFixed(1)}°</td>
                   <td class="mono"><strong>${m.peakDateStr}</strong></td>
-                  <td class="mono"><strong>${m.zhr} / h</strong></td>
+                  <td class="mono"><strong>${m.zhr}/h</strong></td>
                   <td class="mono">${m.ra.toFixed(0)}° / ${m.dec >= 0 ? '+' : ''}${m.dec.toFixed(0)}°</td>
                   <td>
-                    <button class="btn-xs primary" data-sim-meteor="${idx}">▶ ${t('actions.simulate', 'Simuler')}</button>
+                    <button class="btn-xs primary" data-sim-meteor="${idx}">${t('actions.simulate', 'Simuler')}</button>
                   </td>
                 </tr>
               `).join('')}
@@ -748,14 +997,14 @@ export class PanelsUI {
           </table>
         </div>
       ` : `
-        <div class="table-scroll" style="max-height: 410px;">
+        <div class="table-scroll" style="max-height: 420px;">
           <table class="astro-table">
             <thead>
               <tr>
-                <th>${t('events.date', 'Date & Heure (UTC/Local)')}</th>
-                <th>${t('events.type', 'Catégorie')}</th>
+                <th>${t('events.date', 'Date & Heure')}</th>
+                <th>${t('events.type', 'Type')}</th>
                 <th>${t('events.event', 'Événement')}</th>
-                <th>${t('events.details', 'Détails & Lieu optimal')}</th>
+                <th>${t('events.details', 'Détails & Lieu')}</th>
                 <th>Action</th>
               </tr>
             </thead>
@@ -767,7 +1016,7 @@ export class PanelsUI {
                   <td><strong>${ev.title}</strong></td>
                   <td>${ev.details}</td>
                   <td>
-                    <button class="btn-xs primary" data-sim-event="${idx}">▶ ${t('actions.simulate', 'Simuler')}</button>
+                    <button class="btn-xs primary" data-sim-event="${idx}">${t('actions.simulate', 'Simuler')}</button>
                   </td>
                 </tr>
               `).join('')}
@@ -776,6 +1025,8 @@ export class PanelsUI {
         </div>
       `}
     `;
+
+    this._bindEphSubnav();
 
     this.modalBody.querySelector('#ev-prev-year')?.addEventListener('click', () => {
       this.eventsYear -= 1;
@@ -804,7 +1055,6 @@ export class PanelsUI {
         const ev = filteredEvents[idx];
         if (ev) {
           this.app.simulateAstronomicalEvent(ev);
-          this.closePanel();
         }
       });
     });
@@ -815,35 +1065,63 @@ export class PanelsUI {
         const m = meteors[idx];
         if (m) {
           this.app.simulateMeteorShowerPeak(m);
-          this.closePanel();
         }
       });
     });
   }
 
   /* ==========================================================================
-   * 6. PANNEAU « CHOIX DU LIEU » (33 848 villes, GPS, Coordonnées manuelles, Altitude)
+   * 6. PANNEAU « CHOIX DU LIEU & QUALITÉ DU CIEL (BORTLE 1–9) »
    * ========================================================================== */
   renderLocationPanel() {
     const t = (k, fb) => this.t(k, fb);
-    this.modalTitle.textContent = t('panels.locationTitle', 'Choix du lieu d\'observation (33 848 villes, GPS & Manuel)');
+    this.modalTitle.textContent = t('panels.locationTitle', 'Lieu d\'observation & Qualité du ciel');
 
     const obs = this.app.state.observer;
     const totalCities = this.app.state.catalogs.cities?.rows?.length || 33848;
+    const bortle = this.app.state.bortleClass || 4;
+    const bortleLabels = {
+      1: '1 · Excellent site noir (SQM 21.9)',
+      2: '2 · Site vraiment noir (SQM 21.7)',
+      3: '3 · Ciel rural (SQM 21.5)',
+      4: '4 · Transition rurale/périurbaine (SQM 20.8)',
+      5: '5 · Ciel périurbain (SQM 19.8)',
+      6: '6 · Périurbain lumineux (SQM 19.1)',
+      7: '7 · Transition périurbain/urbain (SQM 18.5)',
+      8: '8 · Ciel urbain (SQM 18.0)',
+      9: '9 · Cœur de métropole (SQM 17.3)'
+    };
 
     this.modalBody.innerHTML = `
+      <div class="eph-subnav">
+        <button class="eph-tab active" data-loc-tab="location">Lieu & Ciel (Bortle)</button>
+        <button class="eph-tab" data-loc-tab="horizon">Mon horizon (360° & PeakFinder)</button>
+      </div>
+
+      <div class="drawer-section">
+        <div class="drawer-section-title">Qualité du ciel nocturne — Échelle de Bortle (1–9)</div>
+        <div class="bortle-bar">
+          ${[1, 2, 3, 4, 5, 6, 7, 8, 9].map(b => `
+            <button class="bortle-step b-${b} ${b === bortle ? 'active' : ''}" data-bortle="${b}" title="${bortleLabels[b]}">${b}</button>
+          `).join('')}
+        </div>
+        <div class="muted" style="font-size: 11.5px; margin-top: 6px;">
+          Actif : <strong>Classe ${bortleLabels[bortle]}</strong> — ajuste la brillance du fond de ciel (Krisciunas & Schaefer 1991) et les verdicts de visibilité (Crumey 2014).
+        </div>
+      </div>
+
       <div class="location-grid">
         <div class="location-search-col">
-          <h4>🔍 ${t('location.searchCity', 'Rechercher parmi')} ${totalCities.toLocaleString()} ${t('location.cities', 'villes & observatoires')}</h4>
+          <h4>${t('location.searchCity', 'Rechercher parmi')} ${totalCities.toLocaleString()} ${t('location.cities', 'villes & observatoires')}</h4>
           <div style="display:flex; gap:8px; margin-bottom:10px;">
             <input type="text" id="city-search-input" class="text-input" placeholder="${t('location.searchPlaceholder', 'Paris, Pic du Midi, Paranal, Montréal, Tokyo…')}">
-            <button class="btn-secondary" id="btn-use-gps">📍 GPS</button>
+            <button class="btn-secondary" id="btn-use-gps">GPS</button>
           </div>
           <div id="city-search-results" class="city-list-box"></div>
         </div>
 
         <div class="location-manual-col">
-          <h4>🌐 ${t('location.manualCoords', 'Coordonnées manuelles & Altitude')}</h4>
+          <h4>${t('location.manualCoords', 'Coordonnées manuelles & Altitude')}</h4>
           <div class="form-group">
             <label>${t('location.name', 'Nom du lieu')}</label>
             <input type="text" id="loc-name-input" class="text-input" value="${obs.name}">
@@ -851,29 +1129,45 @@ export class PanelsUI {
           <div class="form-row-2">
             <div class="form-group">
               <label>${t('location.latitude', 'Latitude (° N+/S−)')}</label>
-              <input type="number" step="0.0001" min="-90" max="90" id="loc-lat-input" class="text-input" value="${obs.lat}">
+              <input type="number" step="0.0001" min="-90" max="90" id="loc-lat-input" class="text-input mono" value="${obs.lat}">
             </div>
             <div class="form-group">
               <label>${t('location.longitude', 'Longitude (° E+/O−)')}</label>
-              <input type="number" step="0.0001" min="-180" max="180" id="loc-lon-input" class="text-input" value="${obs.lon}">
+              <input type="number" step="0.0001" min="-180" max="180" id="loc-lon-input" class="text-input mono" value="${obs.lon}">
             </div>
           </div>
           <div class="form-row-2">
             <div class="form-group">
               <label>${t('location.altitude', 'Altitude (m)')}</label>
-              <input type="number" step="1" min="-400" max="9000" id="loc-alt-input" class="text-input" value="${obs.alt || 0}">
+              <input type="number" step="1" min="-400" max="9000" id="loc-alt-input" class="text-input mono" value="${obs.alt || 0}">
             </div>
             <div class="form-group">
               <label>${t('location.timezone', 'Fuseau horaire (IANA)')}</label>
-              <input type="text" id="loc-tz-input" class="text-input" value="${obs.tz || 'Europe/Paris'}">
+              <input type="text" id="loc-tz-input" class="text-input mono" value="${obs.tz || 'Europe/Paris'}">
             </div>
           </div>
           <button class="btn-primary" id="btn-apply-location" style="width:100%; margin-top:10px;">
-            ✓ ${t('location.apply', 'Appliquer ce lieu')}
+            ${t('location.apply', 'Appliquer ce lieu')}
           </button>
         </div>
       </div>
     `;
+
+    this.modalBody.querySelector('[data-loc-tab="horizon"]')?.addEventListener('click', () => {
+      this.openPanel('horizon');
+    });
+
+    this.modalBody.querySelectorAll('[data-bortle]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        this.app.state.bortleClass = Number(btn.getAttribute('data-bortle'));
+        this.app.saveSettings();
+        this.app.requestRender();
+        if (this.app.state.selectedObject) {
+          this.app.refreshSelectedObjectCard();
+        }
+        this.renderLocationPanel();
+      });
+    });
 
     const updateCityList = (query) => {
       const resultsEl = this.modalBody.querySelector('#city-search-results');
@@ -893,7 +1187,7 @@ export class PanelsUI {
           const c = matches[Number(el.getAttribute('data-city-idx'))];
           if (c) {
             this.app.setObserverLocation(c);
-            this.closePanel();
+            this.renderLocationPanel();
           }
         });
       });
@@ -913,7 +1207,7 @@ export class PanelsUI {
         const alt = Math.round(pos.coords.altitude || 50);
         const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
         this.app.setObserverLocation({ name: 'Position GPS', country: '', lat, lon, alt, tz });
-        this.closePanel();
+        this.renderLocationPanel();
       });
     });
 
@@ -924,46 +1218,67 @@ export class PanelsUI {
       const alt = parseFloat(this.modalBody.querySelector('#loc-alt-input').value) || 0;
       const tz = this.modalBody.querySelector('#loc-tz-input').value || 'UTC';
       this.app.setObserverLocation({ name, country: '', lat, lon, alt, tz });
-      this.closePanel();
     });
   }
 
   /* ==========================================================================
-   * 7. PANNEAU « MON HORIZON » (Profil 4 directions N, E, S, O + relief & heures lever/coucher)
+   * 7. PANNEAU « MON HORIZON » (Profil 360° + Règle graduée à bras tendu + PeakFinder)
    * ========================================================================== */
   renderHorizonPanel() {
     const t = (k, fb) => this.t(k, fb);
-    this.modalTitle.textContent = t('panels.horizonTitle', 'Mon horizon — Profil d\'obstruction & Relief');
+    this.modalTitle.textContent = t('panels.horizonTitle', 'Mon horizon — Masque d\'obstruction 360°');
 
-    const hp = this.app.state.horizonProfile; // { N, NE, E, SE, S, SW, W, NW }
+    const hp = this.app.state.horizonProfile;
 
     this.modalBody.innerHTML = `
-      <p class="muted" style="margin-bottom: 12px;">
-        ${t('horizon.description', 'Indiquez la hauteur angulaire (°) des obstacles qui bouchent la vue dans les quatre directions (arbres, bâtiments, collines). Ce profil dessine le relief sur la vue terrestre ET décale automatiquement les heures de lever et de coucher de tous les astres.')}
+      <div class="eph-subnav">
+        <button class="eph-tab" data-loc-tab="location">Lieu & Ciel (Bortle)</button>
+        <button class="eph-tab active" data-loc-tab="horizon">Mon horizon (360° & PeakFinder)</button>
+      </div>
+
+      <p class="muted" style="margin-bottom: 10px; font-size: 12.5px;">
+        ${t('horizon.description', 'Indiquez la hauteur angulaire (°) des obstacles autour de vous (arbres, bâtiments, relief). Ce profil dessine la silhouette sur le ciel ET décale l\'heure effective de lever et de coucher de tous les astres.')}
       </p>
 
-      <div class="panel-toolbar">
+      <!-- Règle graduée à bras tendu (Astro2001 tour) -->
+      <div class="arm-ruler-banner">
+        <span class="arm-ruler-title">Repère à bras tendu :</span>
+        <button class="arm-chip" data-arm-deg="3" title="Appliquer 3° (2 doigts)">2 doigts ≈ <strong>3°</strong></button>
+        <button class="arm-chip" data-arm-deg="5" title="Appliquer 5° (3 doigts)">3 doigts ≈ <strong>5°</strong></button>
+        <button class="arm-chip" data-arm-deg="10" title="Appliquer 10° (1 poing fermé)">1 poing ≈ <strong>10°</strong></button>
+        <button class="arm-chip" data-arm-deg="20" title="Appliquer 20° (main ouverte)">Empan ≈ <strong>20°</strong></button>
+      </div>
+
+      <div class="panel-toolbar" style="margin-top: 10px;">
         <div class="btn-group">
-          <button class="btn-secondary" data-hz-preset="flat">${t('horizon.presetFlat', 'Plaine dégagée (0°)')}</button>
-          <button class="btn-secondary" data-hz-preset="garden">${t('horizon.presetGarden', 'Jardin / Haies (8–15°)')}</button>
+          <button class="btn-secondary" data-hz-preset="flat">${t('horizon.presetFlat', 'Plaine (0°)')}</button>
+          <button class="btn-secondary" data-hz-preset="garden">${t('horizon.presetGarden', 'Jardin (8–15°)')}</button>
           <button class="btn-secondary" data-hz-preset="urban">${t('horizon.presetUrban', 'Cour urbaine (18–28°)')}</button>
-          <button class="btn-secondary" data-hz-preset="alpine">${t('horizon.presetAlpine', 'Vallée de montagne')}</button>
+          <button class="btn-secondary" data-hz-preset="alpine">${t('horizon.presetAlpine', 'Vallée alpine')}</button>
         </div>
+        <label class="btn-secondary" style="cursor:pointer;">
+          Importer PeakFinder (.txt)
+          <input type="file" id="peakfinder-file-input" accept=".txt,.hor,.csv" style="display:none;">
+        </label>
       </div>
 
       <div class="horizon-sliders-grid">
         ${['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'].map(dir => `
           <div class="hz-slider-card">
-            <label><strong>${dir}</strong> (<span id="hz-val-${dir}">${hp[dir] ?? 0}</span>°)</label>
+            <label><strong>${dir}</strong> (<span id="hz-val-${dir}" class="mono">${hp[dir] ?? 0}</span>°)</label>
             <input type="range" min="0" max="65" step="1" value="${hp[dir] ?? 0}" data-hz-dir="${dir}">
           </div>
         `).join('')}
       </div>
 
       <div class="tonight-chart-wrap" style="margin-top:12px;">
-        <canvas id="horizon-preview-canvas" width="780" height="170"></canvas>
+        <canvas id="horizon-preview-canvas" width="780" height="175"></canvas>
       </div>
     `;
+
+    this.modalBody.querySelector('[data-loc-tab="location"]')?.addEventListener('click', () => {
+      this.openPanel('location');
+    });
 
     const drawPreview = () => {
       const c = this.modalBody.querySelector('#horizon-preview-canvas');
@@ -972,8 +1287,22 @@ export class PanelsUI {
       const w = c.width;
       const h = c.height;
       ctx.clearRect(0, 0, w, h);
-      ctx.fillStyle = '#081121';
+      ctx.fillStyle = '#070c16';
       ctx.fillRect(0, 0, w, h);
+
+      // Reference altitude lines at 10° (1 poing), 20° (empan), 40°
+      ctx.strokeStyle = 'rgba(130, 165, 220, 0.16)';
+      ctx.fillStyle = 'rgba(160, 190, 235, 0.55)';
+      ctx.font = '10px "IBM Plex Mono", monospace';
+      ctx.textAlign = 'left';
+      [10, 20, 40].forEach(deg => {
+        const y = h - 24 - (deg / 70) * (h - 38);
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.lineTo(w, y);
+        ctx.stroke();
+        ctx.fillText(`${deg}° (${deg / 10} poing${deg > 10 ? 's' : ''})`, 8, y - 3);
+      });
 
       ctx.beginPath();
       ctx.moveTo(0, h);
@@ -985,9 +1314,9 @@ export class PanelsUI {
       }
       ctx.lineTo(w, h);
       ctx.closePath();
-      ctx.fillStyle = '#183028';
+      ctx.fillStyle = 'rgba(26, 52, 42, 0.85)';
       ctx.fill();
-      ctx.strokeStyle = '#48a878';
+      ctx.strokeStyle = '#52b788';
       ctx.lineWidth = 2;
       ctx.stroke();
 
@@ -996,7 +1325,7 @@ export class PanelsUI {
         { az: 180, l: 'S' }, { az: 225, l: 'SO' }, { az: 270, l: 'O' }, { az: 315, l: 'NO' }, { az: 360, l: 'N' }
       ];
       ctx.fillStyle = '#d8e8ff';
-      ctx.font = '600 11px system-ui, sans-serif';
+      ctx.font = '600 11px "IBM Plex Sans", system-ui, sans-serif';
       ctx.textAlign = 'center';
       dirs.forEach(d => {
         const x = (d.az / 360) * w;
@@ -1019,6 +1348,18 @@ export class PanelsUI {
       });
     });
 
+    this.modalBody.querySelectorAll('[data-arm-deg]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const deg = Number(btn.getAttribute('data-arm-deg'));
+        ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'].forEach(d => {
+          this.app.state.horizonProfile[d] = deg;
+        });
+        this.app.saveSettings();
+        this.app.requestRender();
+        this.renderHorizonPanel();
+      });
+    });
+
     this.modalBody.querySelectorAll('[data-hz-preset]').forEach(btn => {
       btn.addEventListener('click', () => {
         const p = btn.getAttribute('data-hz-preset');
@@ -1036,14 +1377,47 @@ export class PanelsUI {
         }
       });
     });
+
+    this.modalBody.querySelector('#peakfinder-file-input')?.addEventListener('change', async (e) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      const text = await file.text();
+      const lines = text.split(/\r?\n/);
+      const pairs = [];
+      for (const line of lines) {
+        const m = line.trim().match(/^(\d+(?:\.\d+)?)\s+([+-]?\d+(?:\.\d+)?)/);
+        if (m) pairs.push({ az: parseFloat(m[1]), alt: Math.max(0, parseFloat(m[2])) });
+      }
+      if (pairs.length >= 4) {
+        const sampleAt = (targetAz) => {
+          let best = pairs[0];
+          let bestDiff = 999;
+          for (const pt of pairs) {
+            const diff = Math.abs(((pt.az - targetAz + 540) % 360) - 180);
+            if (diff < bestDiff) {
+              bestDiff = diff;
+              best = pt;
+            }
+          }
+          return Math.round(best.alt);
+        };
+        const mapDir = { N: 0, NE: 45, E: 90, SE: 135, S: 180, SW: 225, W: 270, NW: 315 };
+        for (const [k, az] of Object.entries(mapDir)) {
+          this.app.state.horizonProfile[k] = sampleAt(az);
+        }
+        this.app.saveSettings();
+        this.app.requestRender();
+        this.renderHorizonPanel();
+      }
+    });
   }
 
   /* ==========================================================================
-   * 8. PANNEAU « TÉLESCOPE ET OCULAIRES » (12 marques / 78 modèles / 10 oculaires + saisie manuelle)
+   * 8. PANNEAU « MATÉRIEL : TÉLESCOPE ET OCULAIRES » (12 marques / 78 modèles / 10 oculaires)
    * ========================================================================== */
   renderTelescopePanel() {
     const t = (k, fb) => this.t(k, fb);
-    this.modalTitle.textContent = t('panels.telescopeTitle', 'Télescope et oculaires (12 marques / 78 modèles / 10 oculaires)');
+    this.modalTitle.textContent = t('panels.telescopeTitle', 'Matériel — Train optique & Oculaires');
 
     const telData = this.app.state.catalogs.telescopes || { brands: [], telescopes: [], eyepieces: [] };
     const allModels = telData.telescopes || telData.models || [];
@@ -1051,11 +1425,40 @@ export class PanelsUI {
     const brands = telData.brands?.length ? telData.brands : [...new Set(allModels.map(m => m.brand))];
     const currentBrandModels = allModels.filter(m => m.brand === cfg.brand);
     const stats = this.app.computeOpticalStats();
+    const orient = this.app.viewport.opticalOrientation || 'erect';
+    const showFrame = !!this.app.state.toggles.showFieldFrame;
 
     this.modalBody.innerHTML = `
-      <div class="location-grid">
+      <!-- Carte « Ce soir » du train optique actif -->
+      <div class="rig-tonight-card">
+        <div class="rig-tonight-head">
+          <div>
+            <span class="rig-badge">TRAIN OPTIQUE ACTIF</span>
+            <h4>${cfg.brand} ${cfg.model} · Oculaire ${cfg.eyepieceFocalMm} mm (${cfg.eyepieceAfovDeg}°)${cfg.barlow !== 1 ? ` · Barlow ${cfg.barlow}×` : ''}</h4>
+          </div>
+          <label class="field-frame-toggle">
+            <input type="checkbox" id="chk-show-field-frame" ${showFrame ? 'checked' : ''}>
+            <span>Tracer sur le ciel</span>
+          </label>
+        </div>
+        <div class="rig-metrics-row mono">
+          <span><strong>${cfg.apertureMm}/${cfg.focalMm} mm</strong> (f/${stats.fRatio})</span>
+          <span>→</span>
+          <span class="accent"><strong>×${stats.magnification}</strong></span>
+          <span>·</span>
+          <span class="accent"><strong>${stats.tfovStr}</strong></span>
+          <span>·</span>
+          <span>pup. <strong>${stats.exitPupilMm} mm</strong></span>
+          <span>·</span>
+          <span>lim. <strong>mag ${stats.limitingMag}</strong></span>
+          <span>·</span>
+          <span>Dawes <strong>${stats.dawesArcsec}″</strong></span>
+        </div>
+      </div>
+
+      <div class="location-grid" style="margin-top: 12px;">
         <div>
-          <h4>🔭 ${t('telescope.selectModel', 'Sélection du tube optique (12 marques · 78 modèles)')}</h4>
+          <h4>${t('telescope.selectModel', 'Tube optique (12 marques · 78 modèles)')}</h4>
           <div class="form-group">
             <label>${t('telescope.brand', 'Marque')}</label>
             <select id="tel-brand-select" class="select-input" style="width:100%">
@@ -1067,7 +1470,7 @@ export class PanelsUI {
             <select id="tel-model-select" class="select-input" style="width:100%">
               ${currentBrandModels.map(m => `
                 <option value="${m.id || m.model}" ${m.model === cfg.model ? 'selected' : ''}>
-                  ${m.model} (${m.apertureMm} mm · F=${m.focalMm} mm · f/${(m.focalMm / m.apertureMm).toFixed(1)})
+                  ${m.model} (${m.apertureMm}/${m.focalMm} mm · f/${(m.focalMm / m.apertureMm).toFixed(1)})
                 </option>
               `).join('')}
             </select>
@@ -1075,17 +1478,17 @@ export class PanelsUI {
           <div class="form-row-2">
             <div class="form-group">
               <label>${t('telescope.apertureManual', 'Diamètre D (mm)')}</label>
-              <input type="number" id="tel-diam-input" class="text-input" min="20" max="2000" value="${cfg.apertureMm}">
+              <input type="number" id="tel-diam-input" class="text-input mono" min="20" max="2000" value="${cfg.apertureMm}">
             </div>
             <div class="form-group">
               <label>${t('telescope.focalManual', 'Focale F (mm)')}</label>
-              <input type="number" id="tel-focal-input" class="text-input" min="100" max="15000" value="${cfg.focalMm}">
+              <input type="number" id="tel-focal-input" class="text-input mono" min="100" max="15000" value="${cfg.focalMm}">
             </div>
           </div>
         </div>
 
         <div>
-          <h4>👁️ ${t('telescope.selectEyepiece', 'Oculaire (10 modèles) & Barlow')}</h4>
+          <h4>${t('telescope.selectEyepiece', 'Oculaire (10 modèles) & Barlow')}</h4>
           <div class="form-group">
             <label>${t('telescope.eyepiecePreset', 'Oculaire de référence')}</label>
             <select id="tel-ep-select" class="select-input" style="width:100%">
@@ -1099,61 +1502,68 @@ export class PanelsUI {
           <div class="form-row-2">
             <div class="form-group">
               <label>${t('telescope.epFocalManual', 'Focale oculaire (mm)')}</label>
-              <input type="number" step="0.5" min="2" max="55" id="tel-ep-focal" class="text-input" value="${cfg.eyepieceFocalMm}">
+              <input type="number" step="0.5" min="2" max="55" id="tel-ep-focal" class="text-input mono" value="${cfg.eyepieceFocalMm}">
             </div>
             <div class="form-group">
               <label>${t('telescope.epAfovManual', 'Champ apparent (°)')}</label>
-              <input type="number" step="1" min="30" max="120" id="tel-ep-afov" class="text-input" value="${cfg.eyepieceAfovDeg}">
+              <input type="number" step="1" min="30" max="120" id="tel-ep-afov" class="text-input mono" value="${cfg.eyepieceAfovDeg}">
             </div>
           </div>
-          <div class="form-row-2">
-            <div class="form-group">
-              <label>${t('telescope.barlow', 'Barlow / Réducteur')}</label>
-              <select id="tel-barlow-select" class="select-input" style="width:100%">
-                <option value="0.63" ${cfg.barlow === 0.63 ? 'selected' : ''}>0.63× (Réducteur)</option>
-                <option value="1" ${cfg.barlow === 1 ? 'selected' : ''}>1× (Aucun)</option>
-                <option value="1.5" ${cfg.barlow === 1.5 ? 'selected' : ''}>1.5× Barlow</option>
-                <option value="2" ${cfg.barlow === 2 ? 'selected' : ''}>2× Barlow</option>
-                <option value="3" ${cfg.barlow === 3 ? 'selected' : ''}>3× Barlow</option>
-              </select>
-            </div>
-            <div class="form-group">
-              <label>${t('telescope.orientation', 'Orientation optique')}</label>
-              <select id="tel-orient-select" class="select-input" style="width:100%">
-                <option value="erect" ${this.app.viewport.opticalOrientation === 'erect' ? 'selected' : ''}>Redressée (Droite)</option>
-                <option value="inverted" ${this.app.viewport.opticalOrientation === 'inverted' ? 'selected' : ''}>Inversée 180° (Newton)</option>
-                <option value="mirror" ${this.app.viewport.opticalOrientation === 'mirror' ? 'selected' : ''}>Miroir G/D (Renvoi coudé)</option>
-              </select>
-            </div>
+          <div class="form-group">
+            <label>${t('telescope.barlow', 'Lentille de Barlow / Réducteur de focale')}</label>
+            <select id="tel-barlow-select" class="select-input" style="width:100%">
+              <option value="0.63" ${cfg.barlow === 0.63 ? 'selected' : ''}>0.63× (Réducteur SCT)</option>
+              <option value="1" ${cfg.barlow === 1 ? 'selected' : ''}>1× (Sans Barlow)</option>
+              <option value="1.5" ${cfg.barlow === 1.5 ? 'selected' : ''}>1.5× Barlow</option>
+              <option value="2" ${cfg.barlow === 2 ? 'selected' : ''}>2× Barlow</option>
+              <option value="3" ${cfg.barlow === 3 ? 'selected' : ''}>3× Barlow</option>
+            </select>
           </div>
         </div>
       </div>
 
-      <div class="tonight-summary-banner" style="margin-top: 14px;">
-        <div class="summary-chip highlight">
-          <span class="chip-label">${t('telescope.magnification', 'Grossissement')}</span>
-          <strong>${stats.magnification}×</strong>
-        </div>
-        <div class="summary-chip highlight">
-          <span class="chip-label">${t('telescope.tfov', 'Champ réel (TFOV)')}</span>
-          <strong>${stats.tfovStr}</strong>
-        </div>
-        <div class="summary-chip">
-          <span class="chip-label">${t('telescope.exitPupil', 'Pupille de sortie')}</span>
-          <strong>${stats.exitPupilMm} mm</strong>
-        </div>
-        <div class="summary-chip">
-          <span class="chip-label">${t('telescope.limitingMag', 'Mag limite / Dawes')}</span>
-          <strong>mag ${stats.limitingMag} · ${stats.dawesArcsec}″</strong>
+      <!-- Orientation optique de l'image avec repère visuel R -->
+      <div class="drawer-section" style="margin-top: 12px;">
+        <div class="drawer-section-title">${t('telescope.orientation', 'Orientation de l\'image à l\'oculaire')}</div>
+        <div class="orient-cards-grid">
+          <button class="orient-card ${orient === 'erect' ? 'active' : ''}" data-orient="erect">
+            <span class="orient-glyph">R</span>
+            <strong>Droite</strong>
+            <small>Jumelles / Prisme Amici</small>
+          </button>
+          <button class="orient-card ${orient === 'inverted' ? 'active' : ''}" data-orient="inverted">
+            <span class="orient-glyph" style="transform: rotate(180deg);">R</span>
+            <strong>Inversée 180°</strong>
+            <small>Newton / Dobson</small>
+          </button>
+          <button class="orient-card ${orient === 'mirror' ? 'active' : ''}" data-orient="mirror">
+            <span class="orient-glyph" style="transform: scaleX(-1);">R</span>
+            <strong>Miroir G/D</strong>
+            <small>Lunette / SCT + renvoi coudé</small>
+          </button>
         </div>
       </div>
 
       <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:12px;">
         <button class="btn-primary" id="btn-switch-telescope-view">
-          🔭 ${t('telescope.openView', 'Basculer en Vue Télescope avec ce champ')}
+          ${t('telescope.openView', 'Basculer en Vue Télescope (touche 3)')}
         </button>
       </div>
     `;
+
+    this.modalBody.querySelector('#chk-show-field-frame')?.addEventListener('change', (e) => {
+      this.app.state.toggles.showFieldFrame = e.target.checked;
+      this.app.saveSettings();
+      this.app.requestRender();
+    });
+
+    this.modalBody.querySelectorAll('[data-orient]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        this.app.viewport.opticalOrientation = btn.getAttribute('data-orient');
+        this.app.applyTelescopeConfig();
+        this.renderTelescopePanel();
+      });
+    });
 
     this.modalBody.querySelector('#tel-brand-select')?.addEventListener('change', (e) => {
       cfg.brand = e.target.value;
@@ -1195,12 +1605,11 @@ export class PanelsUI {
       cfg.eyepieceFocalMm = Math.max(2, parseFloat(this.modalBody.querySelector('#tel-ep-focal').value) || 14);
       cfg.eyepieceAfovDeg = Math.max(30, parseFloat(this.modalBody.querySelector('#tel-ep-afov').value) || 68);
       cfg.barlow = parseFloat(this.modalBody.querySelector('#tel-barlow-select').value) || 1;
-      this.app.viewport.opticalOrientation = this.modalBody.querySelector('#tel-orient-select').value;
       this.app.applyTelescopeConfig();
       this.renderTelescopePanel();
     };
 
-    ['#tel-diam-input', '#tel-focal-input', '#tel-ep-focal', '#tel-ep-afov', '#tel-barlow-select', '#tel-orient-select'].forEach(sel => {
+    ['#tel-diam-input', '#tel-focal-input', '#tel-ep-focal', '#tel-ep-afov', '#tel-barlow-select'].forEach(sel => {
       this.modalBody.querySelector(sel)?.addEventListener('change', syncManualInputs);
     });
 
@@ -1215,7 +1624,7 @@ export class PanelsUI {
    * ========================================================================== */
   async renderOfflinePanel() {
     const t = (k, fb) => this.t(k, fb);
-    this.modalTitle.textContent = t('panels.offlineTitle', 'Hors ligne (PWA) & Paquets Wikipédia téléchargeables');
+    this.modalTitle.textContent = t('panels.offlineTitle', 'Hors ligne (PWA) & Paquets Wikipédia');
 
     let usedMB = '—';
     let quotaMB = '—';
@@ -1242,16 +1651,16 @@ export class PanelsUI {
     this.modalBody.innerHTML = `
       <div class="tonight-summary-banner">
         <div class="summary-chip highlight">
-          <span class="chip-label">⚡ Service Worker PWA</span>
+          <span class="chip-label">Service Worker PWA</span>
           <strong>${'serviceWorker' in navigator ? t('offline.swActive', 'Actif — Prêt hors ligne') : 'Standard'}</strong>
         </div>
         <div class="summary-chip">
-          <span class="chip-label">💾 ${t('offline.diskQuota', 'Espace disque utilisé / Quota disponible')}</span>
-          <strong>${usedMB} Mo / ${quotaMB} Mo (${pctUsed.toFixed(2)}%)</strong>
+          <span class="chip-label">${t('offline.diskQuota', 'Espace disque utilisé / Quota disponible')}</span>
+          <strong class="mono">${usedMB} Mo / ${quotaMB} Mo (${pctUsed.toFixed(2)}%)</strong>
         </div>
       </div>
 
-      <h4 style="margin: 14px 0 8px;">📦 ${t('offline.optionalPacks', 'Paquets optionnels téléchargeables (Résumés Wikipédia hors ligne)')}</h4>
+      <h4 style="margin: 14px 0 8px;">${t('offline.optionalPacks', 'Paquets optionnels téléchargeables (Résumés Wikipédia hors ligne)')}</h4>
       <div class="table-scroll">
         <table class="astro-table">
           <thead>
@@ -1271,14 +1680,14 @@ export class PanelsUI {
                   <td class="mono">${p.size}</td>
                   <td>
                     <span class="badge-detect ${isInstalled ? 'good' : 'fair'}">
-                      ${isInstalled ? t('offline.installed', 'Installé en cache local') : t('offline.notInstalled', 'Disponible')}
+                      ${isInstalled ? t('offline.installed', 'Installé') : t('offline.notInstalled', 'Disponible')}
                     </span>
                   </td>
                   <td>
                     ${isInstalled ? `
-                      <button class="btn-xs" data-remove-pack="${p.lang}">🗑️ ${t('offline.remove', 'Supprimer')}</button>
+                      <button class="btn-xs" data-remove-pack="${p.lang}">${t('offline.remove', 'Supprimer')}</button>
                     ` : `
-                      <button class="btn-xs primary" data-dl-pack="${p.lang}">⬇ ${t('offline.download', 'Télécharger')}</button>
+                      <button class="btn-xs primary" data-dl-pack="${p.lang}">${t('offline.download', 'Télécharger')}</button>
                     `}
                   </td>
                 </tr>
@@ -1312,24 +1721,24 @@ export class PanelsUI {
    * ========================================================================== */
   renderManualPanel() {
     const t = (k, fb) => this.t(k, fb);
-    this.modalTitle.textContent = t('panels.manualTitle', 'Manuel utilisateur & Raccourcis clavier (features.js)');
+    this.modalTitle.textContent = t('panels.manualTitle', 'Manuel utilisateur & Raccourcis clavier');
 
     const features = this.app.getFeaturesList();
 
     this.modalBody.innerHTML = `
       <div class="manual-grid">
         <div>
-          <h4>📖 ${t('manual.guideTitle', 'Guide rapide du Planétarium')}</h4>
+          <h4>${t('manual.guideTitle', 'Architecture & Principes optiques')}</h4>
           <ul class="manual-list">
-            <li><strong>4 Vues synchronisées (1–4)</strong> : Basculez instantanément entre la <em>Vue terrestre</em> (dôme + horizon), la <em>Sphère céleste</em>, le <em>Télescope</em> (champ circulaire + chercheur) et le <em>Système solaire</em> héliocentrique.</li>
-            <li><strong>Navigation & Sélection</strong> : Molette pour zoomer vers le curseur, glisser pour orienter, clic sur n'importe quel astre (871 136 étoiles ATHYG, 15 618 objets OpenNGC, planètes, astéroïdes, 177 satellites) pour ouvrir sa fiche complète à 6 sections.</li>
-            <li><strong>Palette de commandes (⌘K / Ctrl-K)</strong> : Recherchez n'importe quel objet céleste (M31, Sirius, NGC 7000, ISS, Cérès…) ou déclenchez une action au clavier.</li>
-            <li><strong>Relevé photographique HiPS DSS2</strong> : Activez la touche <kbd>D</kbd> pour charger à la demande les vraies tuiles photographiques DSS2 couleur du CDS Strasbourg.</li>
+            <li><strong>5 Vues synchronisées (1–5)</strong> : <em>Terrestre</em> (horizon + relief), <em>Sphère céleste</em>, <em>Télescope</em> (champ circulaire + chercheur 8×50), <em>Système solaire</em> héliocentrique 3D et <em>Ciel entier</em> (planisphère zénithal).</li>
+            <li><strong>Verdict de visibilité (Crumey 2014)</strong> : Chaque fiche calcule le seuil de contraste de la vision humaine sur la région centrale la plus brillante (profil de Sérsic ou Plummer) combiné au modèle de brillance du ciel (Krisciunas & Schaefer 1991 + Patat 2006).</li>
+            <li><strong>Palette de commandes (⌘K / Ctrl-K)</strong> : Recherchez instantanément parmi 871 136 étoiles ATHYG, 15 618 objets OpenNGC, planètes, astéroïdes et 177 satellites SGP4.</li>
+            <li><strong>Relevé photographique HiPS DSS2</strong> : Touche <kbd>D</kbd> ou panneau <em>Calques</em> pour projeter les tuiles photographiques DSS2 couleur du CDS Strasbourg.</li>
           </ul>
         </div>
         <div>
-          <h4>⌨️ ${t('manual.shortcutsTitle', 'Raccourcis clavier (registre features.js)')}</h4>
-          <div class="table-scroll" style="max-height: 340px;">
+          <h4>${t('manual.shortcutsTitle', 'Raccourcis clavier (registre features.js)')}</h4>
+          <div class="table-scroll" style="max-height: 360px;">
             <table class="astro-table">
               <thead>
                 <tr>

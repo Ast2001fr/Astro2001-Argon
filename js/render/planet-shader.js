@@ -419,29 +419,33 @@ export class PlanetShaderRenderer {
           let tb = texData[tIdx + 2];
 
           if (isSun) {
-            // Solar limb darkening: I(mu) = 1 - u*(1 - mu)
-            const limb = 0.38 + 0.62 * Math.pow(nz, 0.45);
+            // Linear solar limb darkening: I(μ) = 1 - u*(1 - μ), u = 0.6 (Neckel & Labs 1994)
+            const limb = 1.0 - 0.6 * (1.0 - nz);
             finalR = tr * limb;
             finalG = tg * limb;
             finalB = tb * limb;
             finalA = edgeAlpha * 255;
           } else {
-            // Lambert + Lommel-Seeliger lunar/planetary reflectance
-            const ndotl = nxScreen * sx + nyOblate * sy + nz * sz;
+            // Incident cosine μ0 and emission cosine μ = nz
+            const mu0 = nxScreen * sx + nyOblate * sy + nz * sz;
+            const mu = nz;
+            const isRegolith = isMoon || bodyId === 'Mercury' || bodyId === 'Mars';
             let light = 0;
-            if (ndotl > -0.06) {
-              const smoothTerm = Math.max(0, (ndotl + 0.06) / 1.06);
-              if (isMoon) {
-                // Lunar Lommel-Seeliger opposition & flat-disk behavior
-                light = Math.pow(smoothTerm, 0.58) * (0.85 + 0.15 * nz);
+            if (mu0 > -0.04) {
+              const effMu0 = Math.max(0, (mu0 + 0.04) / 1.04);
+              if (isRegolith) {
+                // Lommel-Seeliger law for regolith-covered globes: I ∝ μ0 / (μ0 + μ)
+                // (Seeliger 1887; Hapke 1993 §8; McEwen 1991, LPSC XXII, 1135)
+                const ls = (2.0 * effMu0) / Math.max(1e-4, effMu0 + mu);
+                light = isMoon ? ls * (0.78 + 0.22 * effMu0) : ls * (0.65 + 0.35 * effMu0);
               } else {
-                // Planetary limb darkening + terminator
-                light = Math.pow(smoothTerm, 0.72) * Math.pow(nz, 0.22);
+                // Venus and gas giants: Lambert's law with limb darkening
+                light = Math.pow(effMu0, 0.78) * Math.pow(mu, 0.25);
               }
             }
 
-            // Earthshine on the unlit lunar crescent (cendrée)
-            const ambient = isMoon ? 0.055 : 0.03;
+            // Earthshine on the unlit lunar crescent (lumière cendrée)
+            const ambient = isMoon ? 0.055 : 0.028;
             const illum = Math.max(ambient, light);
 
             finalR = tr * illum;

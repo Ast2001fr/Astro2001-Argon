@@ -34,6 +34,7 @@ export class ObjectCardUI {
     this.app = app;
     this.wikiCache = new Map();
     this._currentWikiKey = null;
+    this.collapsed = false;
   }
 
   render(obj) {
@@ -43,49 +44,88 @@ export class ObjectCardUI {
       return;
     }
     this.container.classList.remove('hidden');
+    this.container.classList.toggle('collapsed', this.collapsed);
 
     const t = (k, fallback) => (this.app.t ? this.app.t(k, fallback) : (fallback || k));
     const details = this.app.getObjectFullDetails(obj);
 
     const magVal = details.mag !== undefined && details.mag !== null ? Number(details.mag) : null;
-    // Magnitude scale cursor position (-2 to +14)
     const magPercent = magVal !== null
       ? Math.max(0, Math.min(100, ((magVal + 2) / 16) * 100))
       : 50;
 
     const isJovianOrSaturnian = details.id === 'Jupiter' || details.id === 'Saturn';
+    const isTracked = this.app.state.trackedObjectId === details.id;
+    const isTraced = this.app.state.tracedObjectId === details.id;
+    const isFrameShown = !!this.app.state.showInstrumentFrame;
 
     this.container.innerHTML = `
       <div class="object-card-header">
         <div class="object-card-title-group">
-          <span class="object-type-badge">${details.typeLabel}</span>
+          <div class="object-card-eyebrow">
+            <span class="object-type-badge">${details.typeLabel}</span>
+            <span class="object-con-pill">${details.constellationName}</span>
+          </div>
           <h2 class="object-card-title">${details.title}</h2>
           <div class="object-card-subtitle">${details.subtitle || ''}</div>
         </div>
-        <button class="icon-btn" id="obj-card-close" title="${t('ui.close', 'Fermer')}">✕</button>
+        <div class="object-card-head-btns">
+          <button class="icon-btn" id="obj-card-min" title="${this.collapsed ? 'Déplier la fiche' : 'Réduire la fiche'}" aria-expanded="${!this.collapsed}">
+            <svg class="ic" viewBox="0 0 24 24" aria-hidden="true">${
+              this.collapsed
+                ? '<rect x="6" y="6" width="12" height="12" rx="1.5" stroke-width="1.8"/>'
+                : '<path d="M6 12h12" stroke-width="2"/>'
+            }</svg>
+          </button>
+          <button class="icon-btn" id="obj-card-close" title="${t('ui.close', 'Fermer')}">
+            <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M6.5 6.5l11 11M17.5 6.5l-11 11" stroke-width="1.9"/></svg>
+          </button>
+        </div>
       </div>
 
-      <div class="object-card-actions">
-        <button class="action-pill" id="btn-obj-center">⊕ ${t('actions.center', 'Centrer')}</button>
-        <button class="action-pill ${this.app.state.trackedObjectId === details.id ? 'active' : ''}" id="btn-obj-track">
-          ◎ ${t('actions.track', 'Suivre')}
+      <!-- VERDICT D'ABORD (Hors de la zone défilante : reste visible même fiche réduite) -->
+      <div class="verdict-banner ${details.verdict?.statusClass || details.rts.statusClass || ''}" id="infoState">
+        <div class="verdict-head">
+          <span class="verdict-dot"></span>
+          <strong class="verdict-headline">${details.verdict?.headline || details.rts.statusText}</strong>
+        </div>
+        <div class="verdict-sub">
+          ${details.verdict?.subline || `${t('objectCard.altitudeNow', 'Hauteur')} : ${details.alt.toFixed(1)}° · ${details.compassDir}`}
+        </div>
+        ${details.verdict?.windowLine ? `<div class="verdict-window">${details.verdict.windowLine}</div>` : ''}
+      </div>
+
+      <!-- RANGÉE D'ACTIONS VECTORIELLES -->
+      <div class="object-card-actions" id="infoActions">
+        <button class="action-pill ${isTracked ? 'active' : ''}" id="btn-obj-track" title="Centrer et garder au centre">
+          <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/><circle cx="12" cy="12" r="2.6"/></svg>
+          <span>${isTracked ? t('actions.tracked', 'Suivi') : t('actions.track', 'Suivre')}</span>
         </button>
-        <button class="action-pill ${this.app.state.tracedObjectId === details.id ? 'active' : ''}" id="btn-obj-trace">
-          ↝ ${t('actions.trace', 'Tracer')}
+        <button class="action-pill ${isTraced ? 'active' : ''}" id="btn-obj-trace" title="Tracer la trajectoire sur la nuit">
+          <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 18C8 6 16 6 20 18" stroke-dasharray="2 3"/><circle cx="4" cy="18" r="1.6" fill="currentColor" stroke="none"/><circle cx="20" cy="18" r="1.6" fill="currentColor" stroke="none"/></svg>
+          <span>${t('actions.trace', 'Trajet')}</span>
         </button>
-        <button class="action-pill" id="btn-obj-eyepiece">
-          🔭 ${t('views.telescope', 'Télescope')}
+        <button class="action-pill" id="btn-obj-eyepiece" title="Observer en vue Télescope">
+          <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2"/></svg>
+          <span>${t('views.telescope', 'Oculaire')}</span>
+        </button>
+        <button class="action-pill ${isFrameShown ? 'active' : ''}" id="btn-obj-frame" title="Tracer le champ de l'instrument sur le ciel">
+          <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8" stroke-dasharray="3 3"/><path d="M12 8v8M8 12h8"/></svg>
+          <span>Cadre</span>
         </button>
       </div>
 
       <div class="object-card-body">
+        ${details.photoUrl ? `
+        <div class="obj-photo-frame">
+          <img src="${details.photoUrl}" alt="${details.title}" class="obj-photo-img" loading="lazy">
+          <span class="obj-photo-caption">${details.title} · Imagerie intégrée</span>
+        </div>
+        ` : ''}
+
         <!-- SECTION 1: CE SOIR -->
         <section class="obj-section">
           <h3 class="obj-section-title">1 · ${t('objectCard.tonight', 'Ce soir')}</h3>
-          <div class="obj-tonight-banner ${details.rts.statusClass || ''}">
-            <span>${details.rts.statusText}</span>
-            <strong>${t('objectCard.altitudeNow', 'Hauteur')} : ${details.alt.toFixed(1)}°</strong>
-          </div>
           <div class="obj-kv-grid cols-3">
             <div class="obj-kv-box">
               <span class="kv-label">${t('objectCard.rise', 'Lever')}</span>
@@ -93,7 +133,7 @@ export class ObjectCardUI {
             </div>
             <div class="obj-kv-box">
               <span class="kv-label">${t('objectCard.transit', 'Culmination')}</span>
-              <span class="kv-val">${details.rts.transitStr || '—'} (${details.rts.maxAltStr || ''})</span>
+              <span class="kv-val">${details.rts.transitStr || '—'} <small>${details.rts.maxAltStr || ''}</small></span>
             </div>
             <div class="obj-kv-box">
               <span class="kv-label">${t('objectCard.set', 'Coucher')}</span>
@@ -108,8 +148,8 @@ export class ObjectCardUI {
           ${magVal !== null ? `
           <div class="mag-scale-widget">
             <div class="mag-scale-labels">
-              <span>${t('objectCard.magnitude', 'Magnitude')} : <strong>${magVal.toFixed(2)}</strong></span>
-              <span class="mag-hint">${magVal <= 6.0 ? t('objectCard.nakedEye', 'Œil nu (≤ 6)') : t('objectCard.opticalAid', 'Instrument (> 6)')}</span>
+              <span>${t('objectCard.magnitude', 'Magnitude')} : <strong class="mono">${magVal.toFixed(2)}</strong></span>
+              <span class="mag-hint">${magVal <= (details.verdict?.nakedLimit || 6.0) ? t('objectCard.nakedEye', 'Œil nu') : t('objectCard.opticalAid', 'Instrument')}</span>
             </div>
             <div class="mag-scale-bar">
               <div class="mag-scale-Zone naked-eye" style="width: 50%" title="Œil nu (-2 .. +6)"></div>
@@ -118,7 +158,7 @@ export class ObjectCardUI {
               <div class="mag-scale-marker" style="left: ${magPercent}%"></div>
             </div>
             <div class="mag-scale-ticks">
-              <span>-2</span><span>+2</span><span>+6 (œil nu)</span><span>+10</span><span>+14</span>
+              <span>−2</span><span>+2</span><span>+6 (œil nu)</span><span>+10</span><span>+14</span>
             </div>
           </div>
           ` : ''}
@@ -138,20 +178,26 @@ export class ObjectCardUI {
           <div class="obj-kv-list">
             <div class="obj-kv-row">
               <span class="kv-label">${t('objectCard.altAz', 'Hauteur / Azimut')}</span>
-              <span class="kv-val">${details.alt >= 0 ? '+' : ''}${details.alt.toFixed(2)}° / ${details.az.toFixed(2)}° (${details.compassDir})</span>
+              <span class="kv-val mono">${details.alt >= 0 ? '+' : ''}${details.alt.toFixed(2)}° / ${details.az.toFixed(2)}° (${details.compassDir})</span>
             </div>
             <div class="obj-kv-row">
               <span class="kv-label">${t('objectCard.raDecJ2000', 'AD / Déc (J2000)')}</span>
-              <span class="kv-val">${formatHMS(details.ra)} · ${formatDMS(details.dec)}</span>
+              <span class="kv-val mono">${formatHMS(details.ra)} · ${formatDMS(details.dec)}</span>
             </div>
             <div class="obj-kv-row">
               <span class="kv-label">${t('objectCard.hourAngle', 'Angle horaire')}</span>
-              <span class="kv-val">${formatHMS(details.haDeg)}</span>
+              <span class="kv-val mono">${formatHMS(details.haDeg)}</span>
             </div>
             <div class="obj-kv-row">
-              <span class="kv-label">${t('objectCard.airmass', 'Masse d\'air')}</span>
-              <span class="kv-val">${details.airmassStr}</span>
+              <span class="kv-label">${t('objectCard.airmass', 'Masse d\'air & Extinction')}</span>
+              <span class="kv-val mono">${details.airmassStr}</span>
             </div>
+            ${details.parallacticStr ? `
+            <div class="obj-kv-row">
+              <span class="kv-label">Angle parallactique (q)</span>
+              <span class="kv-val mono">${details.parallacticStr}</span>
+            </div>
+            ` : ''}
             <div class="obj-kv-row">
               <span class="kv-label">${t('objectCard.constellation', 'Constellation UAI')}</span>
               <span class="kv-val">${details.constellationName} (${details.constellationCode})</span>
@@ -177,19 +223,25 @@ export class ObjectCardUI {
           <h3 class="obj-section-title">5 · ${t('objectCard.atEyepiece', 'À l\'oculaire')}</h3>
           <div class="obj-kv-list">
             <div class="obj-kv-row">
-              <span class="kv-label">${t('telescope.instrument', 'Instrument')}</span>
+              <span class="kv-label">${t('telescope.instrument', 'Instrument actif')}</span>
               <span class="kv-val">${details.optics.instrumentLabel}</span>
             </div>
             <div class="obj-kv-row">
               <span class="kv-label">${t('telescope.magnification', 'Grossissement & Champ')}</span>
-              <span class="kv-val">${details.optics.magnification}× · TFOV ${details.optics.tfovStr}</span>
+              <span class="kv-val mono">×${details.optics.magnification} · ${details.optics.tfovStr}</span>
             </div>
             <div class="obj-kv-row">
-              <span class="kv-label">${t('telescope.exitPupil', 'Pupille de sortie')}</span>
-              <span class="kv-val">${details.optics.exitPupilMm} mm</span>
+              <span class="kv-label">${t('telescope.exitPupil', 'Pupille & Pouvoir séparateur')}</span>
+              <span class="kv-val mono">${details.optics.exitPupilMm} mm · Dawes ${details.optics.dawesStr || '0,58″'}</span>
             </div>
+            ${details.optics.clarkAdvice ? `
             <div class="obj-kv-row">
-              <span class="kv-label">${t('telescope.detectability', 'Détectabilité (brillance)')}</span>
+              <span class="kv-label">Grossissement optimal (Clark ~100′)</span>
+              <span class="kv-val mono">${details.optics.clarkAdvice}</span>
+            </div>
+            ` : ''}
+            <div class="obj-kv-row">
+              <span class="kv-label">${t('telescope.detectability', 'Contraste de Crumey (2014)')}</span>
               <span class="kv-val"><span class="badge-detect ${details.optics.detectClass}">${details.optics.detectLabel}</span></span>
             </div>
           </div>
@@ -216,10 +268,12 @@ export class ObjectCardUI {
     this.container.querySelector('#obj-card-close')?.addEventListener('click', () => {
       this.app.selectObject(null);
     });
-    this.container.querySelector('#btn-obj-center')?.addEventListener('click', () => {
-      this.app.centerOnSelectedObject();
+    this.container.querySelector('#obj-card-min')?.addEventListener('click', () => {
+      this.collapsed = !this.collapsed;
+      this.render(this.app.state.selectedObject);
     });
     this.container.querySelector('#btn-obj-track')?.addEventListener('click', () => {
+      this.app.centerOnSelectedObject();
       this.app.toggleTrackSelectedObject();
       this.render(this.app.state.selectedObject);
     });
@@ -230,6 +284,11 @@ export class ObjectCardUI {
     this.container.querySelector('#btn-obj-eyepiece')?.addEventListener('click', () => {
       this.app.centerOnSelectedObject();
       this.app.setViewMode('telescope');
+    });
+    this.container.querySelector('#btn-obj-frame')?.addEventListener('click', () => {
+      this.app.state.showInstrumentFrame = !this.app.state.showInstrumentFrame;
+      this.app.requestRender();
+      this.render(this.app.state.selectedObject);
     });
 
     if (isJovianOrSaturnian) {

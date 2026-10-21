@@ -7,8 +7,8 @@
  * 4) Solar System View (3D orbitable heliocentric system with planets & 8 asteroids)
  */
 
-import { PlanetShaderRenderer } from './planet-shader.js';
-import { MilkyWayAndHipsRenderer } from './milkyway-hips.js?v=3';
+import { PlanetShaderRenderer } from './planet-shader.js?v=4';
+import { MilkyWayAndHipsRenderer } from './milkyway-hips.js?v=4';
 
 const DEG2RAD = Math.PI / 180;
 const RAD2DEG = 180 / Math.PI;
@@ -237,7 +237,7 @@ export class SkyRenderer {
       this._renderObjectTrace(ctx, state.tracedTrajectory, projectRaDec, nightVision);
     }
 
-    // 12. Ground & « Mon horizon » 360° Custom Relief Silhouette + Cardinals (in Terrestrial view)
+    // 12. Ground & « Mon horizon » 360° Custom Relief Silhouette + Cardinals (in Terrestrial / Zenith views)
     if (viewport.viewMode === 'terrestrial') {
       if (state.toggles.ground || state.toggles.horizonProfile) {
         this._renderGroundAndHorizonRelief(ctx, state, nightVision, isAlmanach);
@@ -245,6 +245,13 @@ export class SkyRenderer {
       if (state.toggles.cardinals) {
         this._renderCardinals(ctx, state, nightVision, isAlmanach);
       }
+    } else if (viewport.viewMode === 'zenith') {
+      this._renderZenithPlanisphereRim(ctx, state, nightVision, isAlmanach);
+    }
+
+    // 12b. Instrument Field Frame ("Tracer sur le ciel" from Matériel)
+    if (state.showInstrumentFrame && viewport.viewMode !== 'telescope' && viewport.viewMode !== 'solarsystem') {
+      this._renderInstrumentFieldFrame(ctx, state, projectRaDec, nightVision);
     }
 
     // 13. Selection Reticle
@@ -1400,6 +1407,136 @@ export class SkyRenderer {
     ctx.beginPath();
     ctx.arc(viewport.cx, viewport.cy, globeRadius, 0, Math.PI * 2);
     ctx.stroke();
+    ctx.restore();
+  }
+
+  /**
+   * View 5: Zenith All-Sky Planisphere Rim (calculation-rules.html §1)
+   * Stereographic projection centered on the zenith: horizon (z = 90°) is a circle.
+   */
+  _renderZenithPlanisphereRim(ctx, state, nightVision) {
+    const { viewport } = this;
+    const pts = [];
+    for (let i = 0; i <= 180; i++) {
+      const az = (i / 180) * 360;
+      const hAlt = (state.toggles.horizonProfile && state.getHorizonElevationAtAz)
+        ? state.getHorizonElevationAtAz(az)
+        : 0;
+      pts.push(viewport.projectAltAz(hAlt, az));
+    }
+
+    ctx.save();
+    // Mask outside horizon circle
+    ctx.fillStyle = nightVision ? 'rgba(6, 0, 0, 0.88)' : 'rgba(5, 8, 15, 0.86)';
+    ctx.beginPath();
+    ctx.rect(0, 0, viewport.width, viewport.height);
+    if (pts.length > 0) {
+      ctx.moveTo(pts[0].x, pts[0].y);
+      for (let i = 1; i < pts.length; i++) {
+        ctx.lineTo(pts[i].x, pts[i].y);
+      }
+      ctx.closePath();
+    }
+    ctx.fill('evenodd');
+
+    // Graduated planisphere ring
+    ctx.strokeStyle = nightVision ? '#a82218' : 'rgba(212, 168, 83, 0.55)';
+    ctx.lineWidth = 1.8;
+    ctx.beginPath();
+    if (pts.length > 0) {
+      ctx.moveTo(pts[0].x, pts[0].y);
+      for (let i = 1; i < pts.length; i++) {
+        ctx.lineTo(pts[i].x, pts[i].y);
+      }
+      ctx.closePath();
+    }
+    ctx.stroke();
+
+    // Degree ticks and Cardinal labels around the planisphere horizon circle
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    const cardinals = { 0: 'N', 45: 'NE', 90: 'E', 135: 'SE', 180: 'S', 225: 'SO', 270: 'O', 315: 'NO' };
+    for (let az = 0; az < 360; az += 15) {
+      const p0 = viewport.projectAltAz(0, az);
+      const dx = p0.x - viewport.cx;
+      const dy = p0.y - viewport.cy;
+      const dist = Math.hypot(dx, dy) || 1;
+      const ux = dx / dist;
+      const uy = dy / dist;
+      const isCard = cardinals[az] !== undefined;
+      const tickLen = isCard ? 8 : 4;
+      ctx.strokeStyle = nightVision ? 'rgba(220, 45, 30, 0.6)' : 'rgba(212, 168, 83, 0.45)';
+      ctx.lineWidth = isCard ? 1.5 : 1;
+      ctx.beginPath();
+      ctx.moveTo(p0.x, p0.y);
+      ctx.lineTo(p0.x + ux * tickLen, p0.y + uy * tickLen);
+      ctx.stroke();
+
+      if (isCard) {
+        const lbl = state.cardinalLabels?.[cardinals[az]] || cardinals[az];
+        ctx.font = (az % 90 === 0) ? '700 12px "IBM Plex Sans", system-ui, sans-serif' : '500 10px "IBM Plex Mono", monospace';
+        ctx.fillStyle = nightVision
+          ? '#ff5038'
+          : az === 0
+            ? '#ff7665'
+            : az % 90 === 0
+              ? '#e8b44f'
+              : 'rgba(215, 226, 242, 0.72)';
+        ctx.fillText(lbl, p0.x + ux * 19, p0.y + uy * 19);
+      }
+    }
+    ctx.restore();
+  }
+
+  /**
+   * 12b. Instrument Field Frame ("Tracer sur le ciel" — True scale FOV circle on the sky)
+   */
+  _renderInstrumentFieldFrame(ctx, state, projectRaDec, nightVision) {
+    const { viewport } = this;
+    const scope = state.telescope || { apertureMm: 200, focalMm: 1000, model: '200/1000' };
+    const ep = state.eyepiece || { focalMm: 14, afovDeg: 82, name: '14 mm' };
+    const mag = Math.max(1, scope.focalMm / Math.max(1, ep.focalMm));
+    const tfovDeg = ep.afovDeg / mag;
+
+    let cx = viewport.cx;
+    let cy = viewport.cy;
+    if (state.selectedObject) {
+      const sel = state.selectedObject;
+      const p = (sel.alt !== undefined && sel.az !== undefined && viewport.viewMode !== 'celestial')
+        ? viewport.projectAltAz(sel.alt, sel.az)
+        : (sel.ra !== undefined && sel.dec !== undefined ? projectRaDec(sel.ra, sel.dec) : null);
+      if (p && p.visible) {
+        cx = p.x;
+        cy = p.y;
+      }
+    }
+
+    const rPx = 2 * viewport.focal * Math.tan((tfovDeg * DEG2RAD) * 0.25);
+    if (rPx < 4 || rPx > Math.max(viewport.width, viewport.height) * 1.2) return;
+
+    ctx.save();
+    ctx.strokeStyle = nightVision ? 'rgba(255, 65, 45, 0.85)' : 'rgba(232, 180, 79, 0.88)';
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([6, 4]);
+    ctx.beginPath();
+    ctx.arc(cx, cy, rPx, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Small cardinal ticks on the field circle
+    for (let k = 0; k < 4; k++) {
+      const a = k * Math.PI * 0.5;
+      ctx.beginPath();
+      ctx.moveTo(cx + Math.cos(a) * (rPx - 4), cy + Math.sin(a) * (rPx - 4));
+      ctx.lineTo(cx + Math.cos(a) * (rPx + 4), cy + Math.sin(a) * (rPx + 4));
+      ctx.stroke();
+    }
+
+    ctx.font = '500 10.5px "IBM Plex Mono", ui-monospace, monospace';
+    ctx.fillStyle = nightVision ? '#ff6548' : '#e8b44f';
+    ctx.textAlign = 'center';
+    const fovLabel = tfovDeg >= 1 ? `${tfovDeg.toFixed(2)}°` : `${(tfovDeg * 60).toFixed(1)}′`;
+    ctx.fillText(`${scope.model || `${scope.apertureMm}/${scope.focalMm}`} · ×${Math.round(mag)} · ${fovLabel}`, cx, cy - rPx - 8);
     ctx.restore();
   }
 

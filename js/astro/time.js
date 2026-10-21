@@ -948,3 +948,325 @@ export function createDateInTimezone(
   const off2 = getTimezoneOffsetMinutes(new Date(pass1), tzString, lonDeg);
   return new Date(approxUTC - off2 * 60000);
 }
+
+/* ============================================================================
+ * ASTRO2001 PUBLISHED CALCULATION RULES (https://www.astro2001.org/calculation-rules)
+ * ============================================================================ */
+
+/**
+ * Bortle class (1..9) to zenith sky brightness in mag/arcsec² (SQM).
+ * Source: J. E. Bortle, Sky & Telescope, Feb 2001; unihedron.com
+ */
+export const BORTLE_SQM_TABLE = [21.85, 21.6, 21.4, 20.85, 19.75, 18.8, 18.25, 17.75, 17.2];
+
+export function bortleToSqm(bortleClass = 4) {
+  const idx = Math.max(0, Math.min(8, Math.round(bortleClass) - 1));
+  return BORTLE_SQM_TABLE[idx];
+}
+
+/**
+ * Convert surface brightness μ (mag/arcsec²) to nanolamberts (nL) and back.
+ * Source: Garstang (1989, PASP 101, 306) & Krisciunas & Schaefer (1991, PASP 103, 1033).
+ */
+export function sqmToNanoLamberts(mu) {
+  return 34.08 * Math.exp(20.7233 - 0.921034 * mu);
+}
+
+export function nanoLambertsToSqm(bNL) {
+  if (bNL <= 1e-6) return 24.0;
+  return (20.7233 - Math.log(bNL / 34.08)) / 0.921034;
+}
+
+/**
+ * Atmospheric extinction coefficient k (mag/airmass) at 550 nm.
+ * Source: Hardie (1962); Green, Spherical Astronomy (1985, p. 300).
+ * k = 1.0857 * (τ_Rayleigh * exp(-alt/8000) + τ_ozone + τ_aerosols)
+ */
+export function getExtinctionCoeff(altMeters = 0, aod = 0.05) {
+  const tauRayleigh = 0.0973 * Math.exp(-Math.max(0, altMeters) / 8000.0);
+  const tauOzone = 0.032;
+  const tauAerosol = Math.max(0.01, aod);
+  return 1.0857 * (tauRayleigh + tauOzone + tauAerosol);
+}
+
+/**
+ * Scattering layer airmass X(Z) = (1 - 0.96 sin²Z)^(-1/2).
+ * Source: Krisciunas & Schaefer (1991, PASP 103, 1033), after Schaefer (1990).
+ */
+export function getScatteringAirmass(altDeg) {
+  const zRad = degToRad(Math.min(90, Math.max(0, 90 - altDeg)));
+  const sinZ = Math.sin(zRad);
+  return 1.0 / Math.sqrt(Math.max(0.04, 1.0 - 0.96 * sinZ * sinZ));
+}
+
+/**
+ * Compute directional sky background brightness μ (mag/arcsec²) by summing in nanolamberts:
+ * - Natural sky: 21.9 mag/arcsec² at zenith (Benn & Ellison 1998)
+ * - Light pollution from Bortle class
+ * - Moonlight scattering: Krisciunas & Schaefer (1991, PASP 103, 1033)
+ * - Twilight: Patat et al. (2006, A&A 455, 385) V-band polynomial
+ */
+export function computeDirectionalSkySqm({
+  altDeg = 45,
+  bortleClass = 4,
+  sunAltDeg = -25,
+  moonAltDeg = -10,
+  moonPhaseAngleDeg = 90,
+  moonSepDeg = 60,
+  altMeters = 0
+} = {}) {
+  const k = getExtinctionCoeff(altMeters);
+  const X = getScatteringAirmass(altDeg);
+
+  // 1. Natural sky + Light pollution at zenith, scaled by airmass and dimmed by extinction
+  const muSiteZenith = bortleToSqm(bortleClass);
+  const bZenithNL = sqmToNanoLamberts(muSiteZenith);
+  const bSiteNL = bZenithNL * X * Math.pow(10, -0.4 * k * (X - 1.0));
+
+  // 2. Moonlight scattering (Krisciunas & Schaefer 1991)
+  let bMoonNL = 0;
+  if (moonAltDeg > -2) {
+    const alpha = Math.max(0, Math.min(180, moonPhaseAngleDeg));
+    const Istar = Math.pow(10, -0.4 * (3.84 + 0.026 * alpha + 4e-9 * Math.pow(alpha, 4)));
+    const rhoDeg = Math.max(1.0, moonSepDeg);
+    const cosRho = Math.cos(degToRad(rhoDeg));
+    const fRayleigh = Math.pow(10, 5.36) * (1.06 + cosRho * cosRho);
+    const fMie = rhoDeg >= 10
+      ? Math.pow(10, 6.15 - rhoDeg / 40.0)
+      : 6.2e7 / (rhoDeg * rhoDeg);
+    const fRho = fRayleigh + fMie;
+    const Xmoon = getScatteringAirmass(Math.max(0, moonAltDeg));
+    bMoonNL = fRho * Istar * Math.pow(10, -0.4 * k * Xmoon) * (1.0 - Math.pow(10, -0.4 * k * X));
+  }
+
+  // 3. Twilight (Patat et al. 2006, A&A 455, 385, Table 1 polynomial for -5° to -15°)
+  let bTwilightNL = 0;
+  if (sunAltDeg > -18.0) {
+    let muTwi;
+    if (sunAltDeg <= -5.0 && sunAltDeg >= -15.0) {
+      const x = -sunAltDeg - 5.0; // ζ - 95°
+      muTwi = 11.84 + 1.518 * x - 0.057 * x * x;
+    } else if (sunAltDeg < -15.0) {
+      // Smoothly vanish from -15° (21.78) to -18° (24.0)
+      const f = (-sunAltDeg - 15.0) / 3.0;
+      muTwi = 21.78 + f * 3.5;
+    } else if (sunAltDeg <= 0.0) {
+      // Anchors at -5° (11.84), -4° (10.67), -2° (8.85), 0° (7.71)
+      const f = (sunAltDeg + 5.0) / 5.0;
+      muTwi = 11.84 - f * (11.84 - 7.71);
+    } else {
+      muTwi = Math.max(3.5, 7.71 - sunAltDeg * 0.37);
+    }
+    bTwilightNL = sqmToNanoLamberts(muTwi);
+  }
+
+  return nanoLambertsToSqm(bSiteNL + bMoonNL + bTwilightNL);
+}
+
+/**
+ * Naked-eye limiting magnitude from sky surface brightness μ (mag/arcsec²).
+ * Source: Garstang (1989, PASP 101, 306) & Schaefer (1990, PASP 102, 212)
+ * Dual branch: rods (c = 10^-9.8, k = 10^-1.9) and cones (c = 10^-8.35, k = 10^-5.9).
+ */
+export function computeNakedEyeLimitingMag(muSky, altDeg = 60, altMeters = 0) {
+  const B = sqmToNanoLamberts(muSky);
+  const iRods = Math.pow(10, -9.8) * Math.pow(1.0 + Math.sqrt(Math.pow(10, -1.9) * B), 2);
+  const iCones = Math.pow(10, -8.35) * Math.pow(1.0 + Math.sqrt(Math.pow(10, -5.9) * B), 2);
+  const I = Math.min(iRods, iCones);
+  const mCeil = -16.57 - 2.5 * Math.log10(I);
+  const k = getExtinctionCoeff(altMeters);
+  const X = getAirmass(Math.max(2, altDeg));
+  const extLoss = Math.min(4.0, k * (X - 1.0));
+  return mCeil - extLoss * 0.5;
+}
+
+/**
+ * Evaluate deep-sky and stellar observability using Crumey (2014, MNRAS 442, 2600)
+ * contrast threshold on the brightest region (Sérsic / Plummer / core) and Clark (1990) optimum magnification.
+ */
+export function evaluateCrumeyVisibility({
+  mag = 8.0,
+  majArcmin = 5.0,
+  minArcmin = 5.0,
+  dsoType = 'G',
+  skySqm = 20.85,
+  apertureMm = 200,
+  focalMm = 1000,
+  eyepieceFocalMm = 14,
+  altDeg = 45,
+  altMeters = 0
+} = {}) {
+  const k = getExtinctionCoeff(altMeters);
+  const X = altDeg > 0 ? getAirmass(altDeg) : 40;
+  const extMag = altDeg > 0 ? Math.min(6.0, k * (X - 1.0)) : 10.0;
+  const effMag = mag + extMag;
+
+  const magnification = Math.max(1, focalMm / Math.max(1, eyepieceFocalMm));
+  const exitPupilMm = apertureMm / magnification;
+  const dawesArcsec = 116.0 / Math.max(1, apertureMm);
+
+  // Instrument stellar limiting magnitude (Schaefer factors)
+  const nakedLimit = computeNakedEyeLimitingMag(skySqm, altDeg, altMeters);
+  const pupilFactor = Math.min(1.0, 7.0 / Math.max(0.5, exitPupilMm));
+  const gainMag = 5.0 * Math.log10((apertureMm / 7.0) * pupilFactor);
+  const scopeLimitMag = nakedLimit + gainMag * 0.88;
+
+  // Clark (1990) Optimum Magnified Visual Angle (~100' apparent diameter, bounded to [D/7, 2D])
+  const objSizeArcmin = Math.max(0.5, Math.sqrt(Math.max(0.2, majArcmin) * Math.max(0.2, minArcmin || majArcmin)));
+  const minUsefulMag = Math.max(7, Math.round(apertureMm / 7));
+  const maxUsefulMag = Math.round(apertureMm * 2);
+  const clarkIdealMag = Math.round(Math.max(minUsefulMag, Math.min(maxUsefulMag, 100.0 / Math.min(60, Math.max(1.2, objSizeArcmin * 0.6)))));
+  const clarkIdealEyepieceMm = Math.max(3, Math.min(40, Math.round(focalMm / clarkIdealMag)));
+
+  // Check naked-eye visibility first ("Naked-eye floor")
+  if (altDeg <= 0) {
+    return {
+      status: 'below_horizon',
+      verdictKey: 'out_of_reach',
+      nakedEyeVisible: false,
+      contrastMarginDb: -9.9,
+      scopeLimitMag,
+      nakedLimit,
+      clarkIdealMag,
+      clarkIdealEyepieceMm,
+      dawesArcsec,
+      exitPupilMm
+    };
+  }
+
+  // Open clusters (OCl) or point sources are resolved into stars
+  const isPointOrOpenCluster = dsoType === 'OCl' || dsoType === 'star' || dsoType === 'planet' || majArcmin <= 0.2;
+  if (isPointOrOpenCluster) {
+    const nakedEyeVisible = effMag <= nakedLimit - 0.15;
+    const delta = scopeLimitMag - effMag;
+    const verdictKey = nakedEyeVisible
+      ? 'naked_eye'
+      : delta >= 1.0
+        ? 'easy'
+        : delta >= -0.2
+          ? 'marginal'
+          : 'out_of_reach';
+    return {
+      status: verdictKey,
+      verdictKey,
+      nakedEyeVisible,
+      contrastMarginDb: delta,
+      scopeLimitMag,
+      nakedLimit,
+      clarkIdealMag,
+      clarkIdealEyepieceMm,
+      dawesArcsec,
+      exitPupilMm
+    };
+  }
+
+  // Extended object: Crumey (2014, MNRAS 442, 2600) eqs. 44, 47-49 on brightest core region
+  // Effective core concentration boost (Sérsic for Galaxies ~1.8 mag brighter in core than average; Plummer for GCl ~2.1 mag)
+  let coreBoostMag = 1.2;
+  let coreFrac = 0.35;
+  if (dsoType === 'G' || dsoType === 'GGroup') {
+    coreBoostMag = 1.85;
+    coreFrac = 0.32;
+  } else if (dsoType === 'GCl') {
+    coreBoostMag = 2.15;
+    coreFrac = 0.38;
+  } else if (dsoType === 'PN') {
+    coreBoostMag = 0.6;
+    coreFrac = 0.75;
+  } else if (dsoType === 'HII' || dsoType === 'EmN' || dsoType === 'Neb' || dsoType === 'RfN') {
+    coreBoostMag = 1.65;
+    coreFrac = 0.30;
+  }
+
+  const areaArcsec2 = Math.PI * (majArcmin * 30.0) * ((minArcmin || majArcmin) * 30.0);
+  const meanSb = effMag + 2.5 * Math.log10(Math.max(1, areaArcsec2));
+  const coreSb = Math.max(effMag + 0.5, meanSb - coreBoostMag);
+
+  // Sky luminance B in cd/m² in the eyepiece (Crumey §3.2: darkened by exit pupil and 75% transmission)
+  const bSkyNakedCdM2 = 1.08e5 * Math.pow(10, -0.4 * skySqm);
+  const pupilRatio = Math.min(7.0, Math.max(0.4, exitPupilMm)) / 7.0;
+  const bSkyScopeCdM2 = Math.max(1e-5, bSkyNakedCdM2 * pupilRatio * pupilRatio * 0.75);
+
+  // Apparent solid angle A (steradians) of the core in the eyepiece
+  const appRadiusRad = degToRad(((objSizeArcmin * coreFrac) / 120.0) * magnification);
+  const A_sr = Math.max(1e-9, Math.PI * appRadiusRad * appRadiusRad);
+
+  // Crumey eqs. 44, 47-49
+  const b4 = Math.pow(bSkyScopeCdM2, -0.25);
+  const rTerm = Math.max(1e-6, 6.505e-4 * b4 - 8.461e-4);
+  const kTerm = Math.max(1e-4, 7.633e-3 * b4 - 7.174e-3);
+  const q = 0.6;
+  const C_thresh = Math.pow(Math.pow((rTerm * rTerm) / A_sr, q) + Math.pow(kTerm, q), 1.0 / q);
+
+  // Object contrast over sky: C_obj = 10^(-0.4 * (coreSb - skySqm))
+  const C_obj = Math.pow(10, -0.4 * (coreSb - skySqm));
+  // Field factor F * F_T: F=2 average observer, F=1 trained observer
+  const ratioTrained = C_obj / (C_thresh * 1.8);
+  const contrastMarginDb = 2.5 * Math.log10(Math.max(0.01, ratioTrained));
+
+  const nakedEyeVisible = effMag <= nakedLimit - 0.4 && coreSb <= skySqm + 0.5;
+  let verdictKey = 'out_of_reach';
+  if (effMag <= scopeLimitMag) {
+    if (nakedEyeVisible) verdictKey = 'naked_eye';
+    else if (contrastMarginDb >= 0.55) verdictKey = 'easy';
+    else if (contrastMarginDb >= -0.35) verdictKey = 'marginal';
+  }
+
+  return {
+    status: verdictKey,
+    verdictKey,
+    nakedEyeVisible,
+    contrastMarginDb,
+    meanSb,
+    coreSb,
+    scopeLimitMag,
+    nakedLimit,
+    clarkIdealMag,
+    clarkIdealEyepieceMm,
+    dawesArcsec,
+    exitPupilMm
+  };
+}
+
+/**
+ * Ballesteros (2012, EPL 97, 34008) formula for stellar effective temperature from B-V index,
+ * and stellar radius R/R☉ = sqrt(L) * (5772 / T)².
+ */
+export function bvToTemperatureK(bv = 0.0) {
+  const x = Math.max(-0.4, Math.min(2.2, bv));
+  return Math.round(4600 * (1.0 / (0.92 * x + 1.7) + 1.0 / (0.92 * x + 0.62)));
+}
+
+export function computeStellarRadiusSolar(mag, distLy, bv = 0.0) {
+  if (!distLy || distLy <= 0) return null;
+  const distPc = distLy / 3.26156;
+  const absMag = mag - 5.0 * (Math.log10(distPc) - 1.0);
+  const lumSolar = Math.pow(10, 0.4 * (4.83 - absMag));
+  const tempK = bvToTemperatureK(bv);
+  const radiusSolar = Math.sqrt(lumSolar) * Math.pow(5772.0 / tempK, 2);
+  return { tempK, lumSolar, radiusSolar, absMag };
+}
+
+/**
+ * Format altitude in degrees with hand-at-arm's-length equivalent (1 fist ≈ 10°, RASC Observer's Handbook).
+ */
+export function formatAltitudeWithFists(altDeg, lang = 'fr') {
+  if (altDeg <= 0) return '';
+  const fists = Math.round((altDeg / 10.0) * 2) / 2;
+  if (fists < 0.5) return '';
+  const fistStr = Number.isInteger(fists) ? String(fists) : String(fists).replace('.', lang === 'en' ? '.' : ',');
+  if (lang === 'en') return `${fistStr} ${fists === 1 ? 'fist' : 'fists'} at arm's length`;
+  if (lang === 'es') return `${fistStr} ${fists === 1 ? 'puño' : 'puños'} a brazo tendido`;
+  if (lang === 'de') return `${fistStr} ${fists === 1 ? 'Faust' : 'Fäuste'} bei ausgestrecktem Arm`;
+  return `${fistStr} ${fists <= 1 ? 'poing' : 'poings'} bras tendu`;
+}
+
+/**
+ * NPF rule for maximum untrailed astrophotography exposure time in seconds:
+ * t = (35 * N + 30 * p) / f  (Frédéric Michaud, Société astronomique du Havre)
+ */
+export function computeNpfExposureSec(fNumber = 5.0, pixelUm = 3.76, focalMm = 500) {
+  if (!focalMm || focalMm <= 0) return 0;
+  return (35.0 * fNumber + 30.0 * pixelUm) / focalMm;
+}
+

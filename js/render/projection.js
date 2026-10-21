@@ -36,10 +36,10 @@ export class SkyViewport {
     this.centerRA = 85;
     this.centerDec = 20;
 
-    // Vertical field of view in degrees (from 0.04° in telescope up to 160° wide dome)
+    // Vertical field of view in degrees (from 0.04° in telescope up to 185° planisphere)
     this.fov = 90;
     this.minFov = 0.04;
-    this.maxFov = 170;
+    this.maxFov = 185;
 
     // Optical orientation in telescope view: 'erect' | 'inverted' (180°) | 'mirror' (H-flip)
     this.opticalOrientation = 'erect';
