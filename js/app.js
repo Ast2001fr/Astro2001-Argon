@@ -19,7 +19,7 @@ import {
   getShortcutMap,
   normalizeShortcutKey,
   getDefaultToggleState
-} from './features.js?v=5';
+} from './features.js?v=6';
 
 import {
   initI18n,
@@ -28,7 +28,7 @@ import {
   t,
   getConstellationName,
   applyDomTranslations
-} from './i18n.js?v=5';
+} from './i18n.js?v=6';
 
 import {
   dateToJD,
@@ -43,7 +43,7 @@ import {
   bvToTemperatureK,
   computeStellarRadiusSolar,
   formatAltitudeWithFists
-} from './astro/time.js?v=5';
+} from './astro/time.js?v=6';
 
 import {
   computeSolarSystem,
@@ -51,14 +51,14 @@ import {
   getPlanetMoons,
   computeAsteroids,
   DEFAULT_ASTEROIDS
-} from './astro/solar-system.js?v=5';
+} from './astro/solar-system.js?v=6';
 
 import {
   computeAllSatellites,
   predictSatellitePasses,
   fetchCelestrakTLEs,
   DEFAULT_SATELLITES
-} from './astro/sgp4.js?v=5';
+} from './astro/sgp4.js?v=6';
 
 import {
   computeRiseTransitSet,
@@ -66,13 +66,13 @@ import {
   computeMeteorShowers,
   computeEventsCalendar,
   DEFAULT_METEOR_SHOWERS
-} from './astro/events.js?v=5';
+} from './astro/events.js?v=6';
 
-import { SkyViewport } from './render/projection.js?v=5';
-import { SkyRenderer } from './render/sky-renderer.js?v=5';
-import { ObjectCardUI } from './ui/object-card.js?v=5';
-import { PanelsUI } from './ui/panels.js?v=5';
-import { CommandPaletteUI } from './ui/command-palette.js?v=5';
+import { SkyViewport } from './render/projection.js?v=6';
+import { SkyRenderer } from './render/sky-renderer.js?v=6';
+import { ObjectCardUI } from './ui/object-card.js?v=6';
+import { PanelsUI } from './ui/panels.js?v=6';
+import { CommandPaletteUI } from './ui/command-palette.js?v=6';
 
 const COMPASS_DIRS = ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 'S', 'SSO', 'SO', 'OSO', 'O', 'ONO', 'NO', 'NNO'];
 
@@ -568,12 +568,20 @@ export class PlanetariumApp {
     this.requestRender();
   }
 
-  setDate(newDate) {
+  setDate(newDate, options = {}) {
     this.state.date = newDate;
     this._updateEphemerides(true);
     this._updateHudLabels();
     if (this.state.selectedObject) {
-      this.objectCardUI.render(this.state.selectedObject);
+      if (options.scrubbing) {
+        const now = performance.now();
+        if (!this._lastScrubCardRender || now - this._lastScrubCardRender > 140) {
+          this._lastScrubCardRender = now;
+          this.objectCardUI.render(this.state.selectedObject);
+        }
+      } else {
+        this.objectCardUI.render(this.state.selectedObject);
+      }
     }
     this.requestRender();
   }
@@ -689,27 +697,33 @@ export class PlanetariumApp {
     const svg = document.getElementById('dockSvg');
     if (!svg) return;
 
-    // Build a noon-to-noon 24-hour window around the current evening/night
     const cur = this.state.date;
-    const noonStart = new Date(cur);
-    if (cur.getHours() < 12) {
-      noonStart.setDate(noonStart.getDate() - 1);
-    }
-    noonStart.setHours(12, 0, 0, 0);
-    const startMs = noonStart.getTime();
     const spanMs = 24 * 3600000;
-    const endMs = startMs + spanMs;
+    let startMs = this._dockWindowStartMs;
+    let endMs = this._dockWindowEndMs;
 
-    this._dockWindowStartMs = startMs;
-    this._dockWindowEndMs = endMs;
+    // Only recompute the 24h noon-to-noon window when NOT actively dragging the slider
+    if (!this._isScrubbingDock || !startMs || !endMs) {
+      const noonStart = new Date(cur);
+      if (cur.getHours() < 12) {
+        noonStart.setDate(noonStart.getDate() - 1);
+      }
+      noonStart.setHours(12, 0, 0, 0);
+      startMs = noonStart.getTime();
+      endMs = startMs + spanMs;
+      this._dockWindowStartMs = startMs;
+      this._dockWindowEndMs = endMs;
+    }
 
     const nowFrac = Math.max(0, Math.min(1, (cur.getTime() - startMs) / spanMs));
-    const playheadX = (nowFrac * 360).toFixed(1);
+    const playheadX = (4 + nowFrac * 352).toFixed(1);
 
     // Recompute twilight gradient bands only if window or location changed
     const cacheKey = `${startMs}:${this.state.observer.lat.toFixed(2)}:${this.state.observer.lon.toFixed(2)}:${this.state.theme}`;
+    let staticChanged = false;
     if (this._dockTrackCacheKey !== cacheKey) {
       this._dockTrackCacheKey = cacheKey;
+      staticChanged = true;
       const obs = this.state.observer;
       const sunRa = this.state.sun?.ra ?? 180;
       const sunDec = this.state.sun?.dec ?? 0;
@@ -762,11 +776,17 @@ export class PlanetariumApp {
       `;
     }
 
+    const existingPlayhead = svg.querySelector('#dockPlayhead');
+    if (!staticChanged && existingPlayhead) {
+      existingPlayhead.setAttribute('transform', `translate(${playheadX}, 0)`);
+      return;
+    }
+
     svg.innerHTML = `
       ${this._dockStaticMarkup || ''}
       <g id="dockPlayhead" transform="translate(${playheadX}, 0)">
-        <line x1="0" y1="1" x2="0" y2="25" stroke="#ffb454" stroke-width="2"/>
-        <circle cx="0" cy="13" r="4.2" fill="#ffb454" stroke="#08101e" stroke-width="1.4"/>
+        <line x1="0" y1="2" x2="0" y2="24" stroke="#ffb454" stroke-width="2"/>
+        <circle cx="0" cy="13" r="4" fill="#ffb454" stroke="#08101e" stroke-width="1.3"/>
       </g>
     `;
   }
@@ -944,25 +964,30 @@ export class PlanetariumApp {
 
     // Interactive SVG Night Track scrubbing (#dockTrack)
     const dockTrack = document.getElementById('dockTrack');
-    let isScrubbingDock = false;
     const scrubDockToEvent = (e) => {
       if (!dockTrack || !this._dockWindowStartMs || !this._dockWindowEndMs) return;
       const rect = dockTrack.getBoundingClientRect();
-      const frac = Math.max(0, Math.min(1, (e.clientX - rect.left) / Math.max(1, rect.width)));
+      const frac = Math.max(0.0005, Math.min(0.9995, (e.clientX - rect.left) / Math.max(1, rect.width)));
       const targetMs = this._dockWindowStartMs + frac * (this._dockWindowEndMs - this._dockWindowStartMs);
-      this.setDate(new Date(targetMs));
+      this.setDate(new Date(targetMs), { scrubbing: true });
     };
     dockTrack?.addEventListener('pointerdown', (e) => {
-      isScrubbingDock = true;
+      this._isScrubbingDock = true;
       dockTrack.setPointerCapture(e.pointerId);
       scrubDockToEvent(e);
     });
     dockTrack?.addEventListener('pointermove', (e) => {
-      if (isScrubbingDock) scrubDockToEvent(e);
+      if (this._isScrubbingDock) scrubDockToEvent(e);
     });
-    dockTrack?.addEventListener('pointerup', () => {
-      isScrubbingDock = false;
-    });
+    const endDockScrub = () => {
+      if (!this._isScrubbingDock) return;
+      this._isScrubbingDock = false;
+      if (this.state.selectedObject) {
+        this.objectCardUI.render(this.state.selectedObject);
+      }
+    };
+    dockTrack?.addEventListener('pointerup', endDockScrub);
+    dockTrack?.addEventListener('pointercancel', endDockScrub);
   }
 
   _bindCanvasInteraction() {

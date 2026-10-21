@@ -1566,7 +1566,8 @@ svg.ic {
   bottom: 0;
   height: 58px;
   z-index: 30;
-  display: flex;
+  display: grid;
+  grid-template-columns: auto minmax(280px, 520px) auto;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
@@ -1581,20 +1582,33 @@ svg.ic {
   display: flex;
   align-items: center;
   gap: 8px;
+  flex-shrink: 0;
 }
 
 .ctx-chip {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
+  justify-content: center;
   padding: 4px 10px;
+  height: 42px;
   background: rgba(255, 255, 255, 0.03);
   border: 1px solid var(--border-subtle);
   border-radius: 8px;
   color: var(--text-primary);
   font-family: inherit;
   cursor: pointer;
-  transition: all 0.14s ease;
+  transition: border-color 0.14s ease, background 0.14s ease;
+  flex-shrink: 0;
+  overflow: hidden;
+}
+
+#btn-open-location {
+  width: 172px;
+}
+
+#btn-open-tonight-chip {
+  width: 178px;
 }
 
 .ctx-chip:hover {
@@ -1607,6 +1621,10 @@ svg.ic {
   align-items: center;
   gap: 5px;
   font-size: 12px;
+  width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .ctx-top svg {
@@ -1620,23 +1638,36 @@ svg.ic {
   color: var(--accent);
   font-family: var(--font-mono);
   font-size: 10px;
+  margin-left: auto;
+  flex-shrink: 0;
 }
 
 .ctx-sub {
   font-size: 10px;
   color: var(--text-secondary);
+  width: 100%;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-variant-numeric: tabular-nums;
 }
 
 .dock-clock-btn {
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 3px 11px;
+  justify-content: center;
+  width: 102px;
+  height: 42px;
+  padding: 3px 8px;
   background: rgba(255, 255, 255, 0.04);
   border: 1px solid var(--border-subtle);
   border-radius: 8px;
   color: var(--text-primary);
   cursor: pointer;
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
 }
 
 .dock-clock-btn:hover {
@@ -1649,20 +1680,23 @@ svg.ic {
   letter-spacing: 0.03em;
   color: var(--text-primary);
   line-height: 1.15;
+  font-variant-numeric: tabular-nums;
 }
 
 .lst-val {
   font-size: 9.5px;
   color: var(--accent);
+  font-variant-numeric: tabular-nums;
 }
 
 /* Center Interactive SVG Night Track */
 .dock-center {
-  flex: 1;
+  width: 100%;
   max-width: 520px;
   display: flex;
   align-items: center;
   gap: 6px;
+  justify-self: center;
 }
 
 .dock-play {
@@ -1689,6 +1723,7 @@ svg.ic {
   font-size: 11px;
   cursor: pointer;
   white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .dock-step-day:hover {
@@ -1698,17 +1733,20 @@ svg.ic {
 
 .dock-track {
   flex: 1;
+  min-width: 160px;
   height: 34px;
   cursor: ew-resize;
   display: flex;
   align-items: center;
+  touch-action: none;
 }
 
 #dockSvg {
   width: 100%;
   height: 34px;
   display: block;
-  overflow: visible;
+  overflow: hidden;
+  pointer-events: none;
 }
 
 .dock-stepper {
