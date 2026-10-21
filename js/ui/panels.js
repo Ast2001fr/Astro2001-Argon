@@ -42,6 +42,7 @@ export class PanelsUI {
 
   _bindGlobalModalEvents() {
     document.getElementById('modal-close')?.addEventListener('click', () => this.closePanel());
+    document.getElementById('modal-close-btn')?.addEventListener('click', () => this.closePanel());
     document.getElementById('drawer-fold-btn')?.addEventListener('click', () => this.closePanel());
   }
 
@@ -50,8 +51,8 @@ export class PanelsUI {
   }
 
   _syncRailActiveState() {
-    document.querySelectorAll('.rail-btn[data-panel]').forEach(btn => {
-      const pid = btn.getAttribute('data-panel');
+    document.querySelectorAll('.rail-btn[data-panel], .rail-btn[data-open-panel]').forEach(btn => {
+      const pid = btn.getAttribute('data-panel') || btn.getAttribute('data-open-panel');
       const isMatch = pid === this.activePanelId ||
         (pid === 'tonight' && ['tonight', 'twilight', 'weather', 'events', 'satellites'].includes(this.activePanelId)) ||
         (pid === 'location' && ['location', 'horizon'].includes(this.activePanelId));
@@ -123,7 +124,7 @@ export class PanelsUI {
     this.modalTitle.textContent = t('panels.layersTitle', 'Calques & Profils d’affichage');
 
     const toggles = this.app.state.toggles;
-    const activeProfile = this.app.state.activeProfile || 'observe';
+    const activeProfile = this.app.state.activeLayerProfile || this.app.state.activeProfile || 'observe';
     const dssOn = !!toggles.dssHips;
     const mwBri = Math.round((this.app.state.milkyWayBrightness ?? 1.0) * 100);
 
@@ -466,8 +467,8 @@ export class PanelsUI {
     this.modalBody.querySelectorAll('[data-open-sub]').forEach(btn => {
       btn.addEventListener('click', () => {
         const target = btn.getAttribute('data-open-sub');
-        if (target && target !== this.activePanel) {
-          this.openPanel(target);
+        if (target && target !== this.activePanelId) {
+          this.openPanel(target, true);
         }
       });
     });

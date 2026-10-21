@@ -57,7 +57,7 @@ export class ObjectCardUI {
     const isJovianOrSaturnian = details.id === 'Jupiter' || details.id === 'Saturn';
     const isTracked = this.app.state.trackedObjectId === details.id;
     const isTraced = this.app.state.tracedObjectId === details.id;
-    const isFrameShown = !!this.app.state.showInstrumentFrame;
+    const isFrameShown = !!this.app.state.toggles?.showFieldFrame;
 
     this.container.innerHTML = `
       <div class="object-card-header">
@@ -70,47 +70,47 @@ export class ObjectCardUI {
           <div class="object-card-subtitle">${details.subtitle || ''}</div>
         </div>
         <div class="object-card-head-btns">
-          <button class="icon-btn" id="obj-card-min" title="${this.collapsed ? 'Déplier la fiche' : 'Réduire la fiche'}" aria-expanded="${!this.collapsed}">
-            <svg class="ic" viewBox="0 0 24 24" aria-hidden="true">${
+          <button type="button" class="icon-btn" id="obj-card-min" title="${this.collapsed ? 'Déplier la fiche' : 'Réduire la fiche'}" aria-expanded="${!this.collapsed}">
+            <svg class="ic" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${
               this.collapsed
-                ? '<rect x="6" y="6" width="12" height="12" rx="1.5" stroke-width="1.8"/>'
-                : '<path d="M6 12h12" stroke-width="2"/>'
+                ? '<polyline points="6 9 12 15 18 9"/>'
+                : '<line x1="6" y1="12" x2="18" y2="12"/>'
             }</svg>
           </button>
-          <button class="icon-btn" id="obj-card-close" title="${t('ui.close', 'Fermer')}">
-            <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M6.5 6.5l11 11M17.5 6.5l-11 11" stroke-width="1.9"/></svg>
+          <button type="button" class="icon-btn" id="obj-card-close" title="${t('ui.close', 'Fermer')}">
+            <svg class="ic" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/></svg>
           </button>
         </div>
       </div>
 
       <!-- VERDICT D'ABORD (Hors de la zone défilante : reste visible même fiche réduite) -->
-      <div class="verdict-banner ${details.verdict?.statusClass || details.rts.statusClass || ''}" id="infoState">
+      <div class="verdict-banner tone-${details.verdict?.tone || 'ok'}" id="infoState">
         <div class="verdict-head">
           <span class="verdict-dot"></span>
-          <strong class="verdict-headline">${details.verdict?.headline || details.rts.statusText}</strong>
+          <strong class="verdict-headline">${details.verdict?.reachText || details.rts.statusText}</strong>
         </div>
-        <div class="verdict-sub">
-          ${details.verdict?.subline || `${t('objectCard.altitudeNow', 'Hauteur')} : ${details.alt.toFixed(1)}° · ${details.compassDir}`}
+        <div class="verdict-sub mono">
+          ${details.verdict?.altFistsText || `${t('objectCard.altitudeNow', 'Hauteur')} : ${details.alt.toFixed(1)}° · ${details.compassDir}`}
         </div>
-        ${details.verdict?.windowLine ? `<div class="verdict-window">${details.verdict.windowLine}</div>` : ''}
+        ${details.verdict?.reasonText ? `<div class="verdict-window">${details.verdict.reasonText}</div>` : ''}
       </div>
 
       <!-- RANGÉE D'ACTIONS VECTORIELLES -->
       <div class="object-card-actions" id="infoActions">
-        <button class="action-pill ${isTracked ? 'active' : ''}" id="btn-obj-track" title="Centrer et garder au centre">
-          <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/><circle cx="12" cy="12" r="2.6"/></svg>
+        <button type="button" class="action-pill ${isTracked ? 'active' : ''}" id="btn-obj-track" title="Centrer et garder au centre">
+          <svg class="ic" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/><circle cx="12" cy="12" r="2.6"/></svg>
           <span>${isTracked ? t('actions.tracked', 'Suivi') : t('actions.track', 'Suivre')}</span>
         </button>
-        <button class="action-pill ${isTraced ? 'active' : ''}" id="btn-obj-trace" title="Tracer la trajectoire sur la nuit">
-          <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 18C8 6 16 6 20 18" stroke-dasharray="2 3"/><circle cx="4" cy="18" r="1.6" fill="currentColor" stroke="none"/><circle cx="20" cy="18" r="1.6" fill="currentColor" stroke="none"/></svg>
+        <button type="button" class="action-pill ${isTraced ? 'active' : ''}" id="btn-obj-trace" title="Tracer la trajectoire sur la nuit">
+          <svg class="ic" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><path d="M4 18C8 6 16 6 20 18" stroke-dasharray="2.5 2.5"/><circle cx="4" cy="18" r="1.6" fill="currentColor" stroke="none"/><circle cx="20" cy="18" r="1.6" fill="currentColor" stroke="none"/></svg>
           <span>${t('actions.trace', 'Trajet')}</span>
         </button>
-        <button class="action-pill" id="btn-obj-eyepiece" title="Observer en vue Télescope">
-          <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2"/></svg>
+        <button type="button" class="action-pill" id="btn-obj-eyepiece" title="Observer en vue Télescope">
+          <svg class="ic" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="2.6"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2"/></svg>
           <span>${t('views.telescope', 'Oculaire')}</span>
         </button>
-        <button class="action-pill ${isFrameShown ? 'active' : ''}" id="btn-obj-frame" title="Tracer le champ de l'instrument sur le ciel">
-          <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8" stroke-dasharray="3 3"/><path d="M12 8v8M8 12h8"/></svg>
+        <button type="button" class="action-pill ${isFrameShown ? 'active' : ''}" id="btn-obj-frame" title="Tracer le champ de l'instrument sur le ciel">
+          <svg class="ic" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="8" stroke-dasharray="3 3"/><path d="M12 8v8M8 12h8"/></svg>
           <span>Cadre</span>
         </button>
       </div>
@@ -286,7 +286,8 @@ export class ObjectCardUI {
       this.app.setViewMode('telescope');
     });
     this.container.querySelector('#btn-obj-frame')?.addEventListener('click', () => {
-      this.app.state.showInstrumentFrame = !this.app.state.showInstrumentFrame;
+      this.app.state.toggles.showFieldFrame = !this.app.state.toggles.showFieldFrame;
+      this.app.saveSettings();
       this.app.requestRender();
       this.render(this.app.state.selectedObject);
     });

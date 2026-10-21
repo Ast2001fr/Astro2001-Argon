@@ -19,7 +19,7 @@ import {
   getShortcutMap,
   normalizeShortcutKey,
   getDefaultToggleState
-} from './features.js?v=4';
+} from './features.js?v=5';
 
 import {
   initI18n,
@@ -28,7 +28,7 @@ import {
   t,
   getConstellationName,
   applyDomTranslations
-} from './i18n.js?v=4';
+} from './i18n.js?v=5';
 
 import {
   dateToJD,
@@ -43,7 +43,7 @@ import {
   bvToTemperatureK,
   computeStellarRadiusSolar,
   formatAltitudeWithFists
-} from './astro/time.js?v=4';
+} from './astro/time.js?v=5';
 
 import {
   computeSolarSystem,
@@ -51,14 +51,14 @@ import {
   getPlanetMoons,
   computeAsteroids,
   DEFAULT_ASTEROIDS
-} from './astro/solar-system.js?v=4';
+} from './astro/solar-system.js?v=5';
 
 import {
   computeAllSatellites,
   predictSatellitePasses,
   fetchCelestrakTLEs,
   DEFAULT_SATELLITES
-} from './astro/sgp4.js?v=4';
+} from './astro/sgp4.js?v=5';
 
 import {
   computeRiseTransitSet,
@@ -66,13 +66,13 @@ import {
   computeMeteorShowers,
   computeEventsCalendar,
   DEFAULT_METEOR_SHOWERS
-} from './astro/events.js?v=4';
+} from './astro/events.js?v=5';
 
-import { SkyViewport } from './render/projection.js?v=4';
-import { SkyRenderer } from './render/sky-renderer.js?v=4';
-import { ObjectCardUI } from './ui/object-card.js?v=4';
-import { PanelsUI } from './ui/panels.js?v=4';
-import { CommandPaletteUI } from './ui/command-palette.js?v=4';
+import { SkyViewport } from './render/projection.js?v=5';
+import { SkyRenderer } from './render/sky-renderer.js?v=5';
+import { ObjectCardUI } from './ui/object-card.js?v=5';
+import { PanelsUI } from './ui/panels.js?v=5';
+import { CommandPaletteUI } from './ui/command-palette.js?v=5';
 
 const COMPASS_DIRS = ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 'S', 'SSO', 'SO', 'OSO', 'O', 'ONO', 'NO', 'NNO'];
 
