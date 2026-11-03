@@ -297,13 +297,13 @@ export class PlanetariumApp {
     };
 
     const [constellations, starMeta, asteroids, satellites, meteors, telescopes, wikiIndex] = await Promise.all([
-      fetchJson('data/constellations.json?v=8'),
-      fetchJson('data/star-meta.json?v=8'),
-      fetchJson('data/asteroids.json?v=8'),
-      fetchJson('data/satellites-tle.json?v=8'),
-      fetchJson('data/meteors.json?v=8'),
-      fetchJson('data/telescopes.json?v=8'),
-      fetchJson('data/wiki-index.json?v=8')
+      fetchJson('data/constellations.json?v=12'),
+      fetchJson('data/star-meta.json?v=12'),
+      fetchJson('data/asteroids.json?v=12'),
+      fetchJson('data/satellites-tle.json?v=12'),
+      fetchJson('data/meteors.json?v=12'),
+      fetchJson('data/telescopes.json?v=12'),
+      fetchJson('data/wiki-index.json?v=12')
     ]);
 
     if (constellations) this.state.catalogs.constellations = constellations.constellations || constellations;
@@ -318,7 +318,7 @@ export class PlanetariumApp {
     this._updateHudLabels();
     this.requestRender();
 
-    fetch('data/stars.bin')
+    fetch('data/stars.bin?v=12')
       .then(r => r.ok ? r.arrayBuffer() : null)
       .then(buf => {
         if (buf) {
@@ -328,14 +328,14 @@ export class PlanetariumApp {
       })
       .catch(() => {});
 
-    fetchJson('data/openngc.json?v=8').then(dso => {
+    fetchJson('data/openngc.json?v=12').then(dso => {
       if (dso) {
         this.state.catalogs.openngc = dso;
         this.requestRender();
       }
     });
 
-    fetchJson('data/cities.json').then(cities => {
+    fetchJson('data/cities.json?v=12').then(cities => {
       if (cities) {
         this.state.catalogs.cities = cities;
       }
@@ -1346,14 +1346,18 @@ export class PlanetariumApp {
       const brightInfo = meta.bright ? meta.bright[idx] : null;
 
       const properName = Array.isArray(nameInfo) ? nameInfo[0] : (nameInfo?.name || (typeof nameInfo === 'string' ? nameInfo : null));
-      const hipNum = (Array.isArray(nameInfo) && nameInfo[1]) || brightInfo?.hip || (idx + 1);
-      const hdNum = (Array.isArray(nameInfo) && nameInfo[2]) || brightInfo?.hd || (idx + 1000);
-      const bayer = (Array.isArray(nameInfo) && nameInfo[3]) ? `${nameInfo[3]} ${nameInfo[5] || conCode}` : (brightInfo?.bayer || `${conCode} #${idx + 1}`);
-      const distLy = (Array.isArray(nameInfo) && nameInfo[6] !== undefined) ? nameInfo[6] : (brightInfo?.distLy || Math.round(15 + (obj.mag + 1.5) * 42));
+      const hipNum = (Array.isArray(nameInfo) && nameInfo[1]) || brightInfo?.hip || 0;
+      const hdNum = (Array.isArray(nameInfo) && nameInfo[2]) || brightInfo?.hd || 0;
+      const bayer = (Array.isArray(nameInfo) && nameInfo[3])
+        ? `${nameInfo[3]} ${nameInfo[5] || conCode}`
+        : (Array.isArray(nameInfo) && nameInfo[4])
+        ? `${nameInfo[4]} ${nameInfo[5] || conCode}`
+        : (brightInfo?.bayer || conCode);
+      const distLy = (Array.isArray(nameInfo) && nameInfo[6] > 0) ? nameInfo[6] : (brightInfo?.distLy || Math.round(15 + (obj.mag + 1.5) * 42));
       const spect = (Array.isArray(nameInfo) && nameInfo[7]) ? nameInfo[7] : (brightInfo?.spect || this._bvToSpectralClass(obj.bv));
 
-      title = properName || `HD ${hdNum}`;
-      subtitle = `${bayer} · HIP ${hipNum} · ${conName}`;
+      title = properName || bayer || (hdNum ? `HD ${hdNum}` : (hipNum ? `HIP ${hipNum}` : `Étoile #${idx}`));
+      subtitle = `${bayer}${hdNum ? ` · HD ${hdNum}` : ''}${hipNum ? ` · HIP ${hipNum}` : ''} · ${conName}`;
       wikiKey = properName || `CON:${conCode}`;
 
       // Ballesteros (2012) effective temperature & stellar radius
@@ -2223,20 +2227,25 @@ export class PlanetariumApp {
       }
     }
 
-    // 2. Named Stars (3,428 proper names) & HD / HIP lookup
+    // 2. Named Stars (3,428 proper names & Bayer/Flamsteed) & HD / HIP lookup
     const meta = this.state.catalogs.starMeta;
     const starsView = this.state.catalogs.starsBin;
     if (meta && meta.names && starsView) {
       for (const [idxStr, entry] of Object.entries(meta.names)) {
-        const name = Array.isArray(entry) ? entry[0] : (entry.name || entry);
+        const proper = Array.isArray(entry) ? (entry[0] || '') : (entry.name || entry || '');
         const hip = Array.isArray(entry) ? entry[1] : entry.hip;
         const hd = Array.isArray(entry) ? entry[2] : entry.hd;
-        if (!q || name.toLowerCase().includes(q) || `hip ${hip}`.includes(q) || `hd ${hd}`.includes(q)) {
+        const bayer = Array.isArray(entry) ? (entry[3] || '') : '';
+        const flam = Array.isArray(entry) ? (entry[4] || '') : '';
+        const con = Array.isArray(entry) ? (entry[5] || '') : '';
+        const desig = bayer && con ? `${bayer} ${con}` : (flam && con ? `${flam} ${con}` : '');
+        const dispName = proper || desig || (hd ? `HD ${hd}` : `HIP ${hip}`);
+        if (!q ? !!proper : (dispName.toLowerCase().includes(q) || desig.toLowerCase().includes(q) || `hip ${hip}`.includes(q) || `hd ${hd}`.includes(q))) {
           const i = Number(idxStr);
           results.push({
             icon: '✦',
-            title: name,
-            subtitle: `Étoile · HD ${hd || (1000 + i)} · HIP ${hip || (i + 1)}`,
+            title: proper && desig ? `${proper} (${desig})` : dispName,
+            subtitle: `Étoile${hd ? ` · HD ${hd}` : ''}${hip ? ` · HIP ${hip}` : ''}`,
             badge: 'Étoile ATHYG',
             actionFn: () => this.findAndCenterObjectById(`STAR:${i}`)
           });
@@ -2331,7 +2340,9 @@ export class PlanetariumApp {
         const conIdx = v.getUint8(off + 7);
         const hor = equatorialToHorizontal(ra, dec, this.state.lstDeg, this.state.observer.lat);
         const nameEntry = this.state.catalogs.starMeta?.names?.[i];
-        const name = Array.isArray(nameEntry) ? nameEntry[0] : (nameEntry?.name || nameEntry || `HD ${1000 + i}`);
+        const name = Array.isArray(nameEntry)
+          ? (nameEntry[0] || (nameEntry[3] && nameEntry[5] ? `${nameEntry[3]} ${nameEntry[5]}` : '') || (nameEntry[4] && nameEntry[5] ? `${nameEntry[4]} ${nameEntry[5]}` : '') || (nameEntry[2] ? `HD ${nameEntry[2]}` : `HIP ${nameEntry[1]}`))
+          : (nameEntry?.name || nameEntry || `Étoile #${i}`);
         const target = { type: 'star', starIdx: i, id, name, ra, dec, alt: hor.alt, az: hor.az, mag, bv, conIdx };
         this.selectObject(target);
         this.centerOnSelectedObject();

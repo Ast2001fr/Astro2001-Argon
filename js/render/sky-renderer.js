@@ -120,53 +120,44 @@ const FRENCH_DSO_NAMES = {
 };
 
 /**
- * Format catalog IDs with clean cartographic spacing (e.g., "M16" -> "M 16", "NGC0869" -> "NGC 869")
+ * Format catalog IDs with clean cartographic spacing (e.g., "M16" -> "M 16", "NGC0869" -> "NGC 869", "PGC00094" -> "PGC 94")
  */
 function formatCatalogCode(code) {
   if (!code) return '';
-  if (/^M\d+$/i.test(code)) {
-    return `M ${code.slice(1)}`;
+  const trimmed = String(code).trim();
+  const m = trimmed.match(/^(M|NGC|IC|PGC|UGC|C|B|LDN|LBN|vdB|Abell|HCG)\s*0*(\d+[A-Za-z]?)$/i);
+  if (m) {
+    const prefix = m[1].toUpperCase() === 'VDB' ? 'vdB' : m[1].toUpperCase() === 'ABELL' ? 'Abell' : m[1].toUpperCase();
+    return `${prefix} ${m[2]}`;
   }
-  if (/^NGC0*(\d+)$/i.test(code)) {
-    return `NGC ${ code.replace(/^NGC0*/i, '') }`;
-  }
-  if (/^IC0*(\d+)$/i.test(code)) {
-    return `IC ${ code.replace(/^IC0*/i, '') }`;
-  }
-  return code;
+  return trimmed;
 }
 
 /**
  * Format star labels concisely for the sky chart:
- * - Real proper names ("Mirfak", "Sabik", "Kaus Media", "Nunki", "Vega") are kept as-is.
- * - Verbose Bayer/Flamsteed Latin genitives ("δ2 Cassiopeiae", "υ Persei", "12 Cassiopeiae")
- *   are compacted to their Greek/Flamsteed + 3-letter IAU code ("δ2 Cas", "υ Per", "12 Cas")
- *   so they never clutter the sky map.
+ * - Real IAU proper names ("Sirius", "Vindemiatrix", "Spica", "Denebola", "Diadem") win over Bayer/Flamsteed.
+ * - Stars without a proper name use their Greek Bayer or Flamsteed designation + 3-letter IAU constellation code ("β Com", "γ Com", "43 Com").
+ * - Never outputs internal HD/HIP numbers on the chart.
  */
 function formatConciseStarLabel(nameEntry, fov) {
   if (!nameEntry) return '';
-  const rawName = Array.isArray(nameEntry) ? nameEntry[0] : (nameEntry.name || String(nameEntry));
-  const bayer = Array.isArray(nameEntry) ? nameEntry[2] : '';
-  const conCode = Array.isArray(nameEntry) ? nameEntry[3] : '';
+  if (typeof nameEntry === 'string') return nameEntry;
+  // Schema: [properName, hip, hd, bayerGreek, flamsteed, conCode, distLy, spect]
+  const properName = String(nameEntry[0] || '').trim();
+  const bayer = String(nameEntry[3] || '').trim();
+  const flam = String(nameEntry[4] || '').trim();
+  const conCode = String(nameEntry[5] || '').trim();
 
-  if (!rawName) return '';
-  // Detect if rawName is a generated Bayer/Flamsteed + Latin genitive (starts with Greek char or digit + space + Latin word)
-  const firstCode = rawName.charCodeAt(0);
-  const isGreekStart = (firstCode >= 0x0391 && firstCode <= 0x03C9);
-  const isNumberStart = (firstCode >= 48 && firstCode <= 57);
-
-  if (isGreekStart || isNumberStart) {
-    // Only show pure Flamsteed numbers when zoomed in (< 14° FOV)
-    if (isNumberStart && fov >= 14) return '';
-    if (bayer && conCode) {
-      return `${bayer} ${conCode}`;
-    }
-    const parts = rawName.split(/\s+/);
-    if (parts.length >= 2 && conCode) {
-      return `${parts[0]} ${conCode}`;
-    }
+  if (properName && !/^HD\s*\d+/i.test(properName) && !/^HIP\s*\d+/i.test(properName)) {
+    return properName;
   }
-  return rawName;
+  if (bayer && conCode) {
+    return `${bayer} ${conCode}`;
+  }
+  if (flam && conCode && fov < 18) {
+    return `${flam} ${conCode}`;
+  }
+  return '';
 }
 
 /**
@@ -330,11 +321,19 @@ export class SkyRenderer {
     ctx.lineJoin = 'round';
     ctx.miterLimit = 2;
 
+    const maxStarLabels = 24;
+    const maxDsoLabels = Math.min(72, Math.max(36, Math.round(36 * (this.viewport.width * this.viewport.height) / (1280 * 800))));
+    let starLabelsPlaced = 0;
+    let dsoLabelsPlaced = 0;
+
     let currentFont = '';
     for (let i = 0; i < this.deferredLabels.length; i++) {
       const item = this.deferredLabels[i];
       const text = item.text;
       if (!text) continue;
+
+      if (item.category === 'star' && starLabelsPlaced >= maxStarLabels) continue;
+      if (item.category === 'dso' && dsoLabelsPlaced >= maxDsoLabels) continue;
 
       const fontStr = item.font || '500 11px "IBM Plex Sans", system-ui, -apple-system, sans-serif';
       if (fontStr !== currentFont) {
@@ -351,8 +350,8 @@ export class SkyRenderer {
       }
 
       const textH = item.heightPx || 11;
-      const padX = item.padX ?? 5;
-      const padY = item.padY ?? 3;
+      const padX = item.padX ?? 6;
+      const padY = item.padY ?? 4;
       const off = item.offsetPx ?? 6;
       const ax = item.x;
       const ay = item.y;
@@ -364,9 +363,22 @@ export class SkyRenderer {
           { tx: ax, ty: ay - 14, align: 'center', x1: ax - textW * 0.5 - padX, y1: ay - 14 - textH - padY, x2: ax + textW * 0.5 + padX, y2: ay - 14 + padY },
           { tx: ax, ty: ay + 16, align: 'center', x1: ax - textW * 0.5 - padX, y1: ay + 16 - textH - padY, x2: ax + textW * 0.5 + padX, y2: ay + 16 + padY }
         ];
-      } else {
+      } else if (item.category === 'star') {
+        // Stars: strictly to the right of the star disc (matching Astro2001 drawStars)
         candidates = [
-          // 1. Right of symbol
+          {
+            tx: ax + off,
+            ty: ay + 3.5,
+            align: 'left',
+            x1: ax + off - padX,
+            y1: ay + 3.5 - textH - padY,
+            x2: ax + off + textW + padX,
+            y2: ay + 3.5 + padY
+          }
+        ];
+      } else {
+        // DSOs & bodies: primary right, or 1-line vertical shift (matching Astro2001 drawDsoLabels)
+        candidates = [
           {
             tx: ax + off,
             ty: ay + 3.5,
@@ -376,35 +388,23 @@ export class SkyRenderer {
             x2: ax + off + textW + padX,
             y2: ay + 3.5 + padY
           },
-          // 2. Top-Right of symbol
           {
-            tx: ax + off * 0.75,
-            ty: ay - off * 0.55 - 2,
+            tx: ax + off,
+            ty: ay + 16.5,
             align: 'left',
-            x1: ax + off * 0.75 - padX,
-            y1: ay - off * 0.55 - 2 - textH - padY,
-            x2: ax + off * 0.75 + textW + padX,
-            y2: ay - off * 0.55 - 2 + padY
+            x1: ax + off - padX,
+            y1: ay + 16.5 - textH - padY,
+            x2: ax + off + textW + padX,
+            y2: ay + 16.5 + padY
           },
-          // 3. Bottom-Right of symbol
           {
-            tx: ax + off * 0.75,
-            ty: ay + off * 0.55 + textH,
+            tx: ax + off,
+            ty: ay - 9.5,
             align: 'left',
-            x1: ax + off * 0.75 - padX,
-            y1: ay + off * 0.55 - padY,
-            x2: ax + off * 0.75 + textW + padX,
-            y2: ay + off * 0.55 + textH + padY
-          },
-          // 4. Left of symbol
-          {
-            tx: ax - off,
-            ty: ay + 3.5,
-            align: 'right',
-            x1: ax - off - textW - padX,
-            y1: ay + 3.5 - textH - padY,
-            x2: ax - off + padX,
-            y2: ay + 3.5 + padY
+            x1: ax + off - padX,
+            y1: ay - 9.5 - textH - padY,
+            x2: ax + off + textW + padX,
+            y2: ay - 9.5 + padY
           }
         ];
       }
@@ -419,6 +419,9 @@ export class SkyRenderer {
       }
 
       if (!chosen) continue;
+
+      if (item.category === 'star') starLabelsPlaced++;
+      if (item.category === 'dso') dsoLabelsPlaced++;
 
       this.placedLabelBoxes.push({
         x1: chosen.x1,
@@ -1192,7 +1195,8 @@ export class SkyRenderer {
   }
 
   /**
-   * Build precomputed 3D unit vectors (ux, uy, uz) and photo index list for all 15,618 OpenNGC objects once
+   * Build precomputed 3D unit vectors (ux, uy, uz), magnitude-sorted index array (_dsoByMag),
+   * and photo index list for all OpenNGC objects once.
    */
   _ensureDsoUnitVectors(rows) {
     if (this._dsoUnitVecs && this._dsoRowsRef === rows) {
@@ -1201,6 +1205,8 @@ export class SkyRenderer {
     const n = rows.length;
     const uVecs = new Float32Array(n * 3);
     const photoIndices = [];
+    const withMag = [];
+    const noMag = [];
 
     for (let i = 0; i < n; i++) {
       const r = rows[i];
@@ -1214,11 +1220,23 @@ export class SkyRenderer {
       if (r[13]) {
         photoIndices.push(i);
       }
+      const type = r[3];
+      // Skip historical OpenNGC single/double stars and plate flaws ('*', '**', '?')
+      if (type === '*' || type === '**' || type === '?') continue;
+      if (r[6] != null && Number.isFinite(r[6])) {
+        withMag.push(i);
+      } else {
+        noMag.push(i);
+      }
     }
+
+    withMag.sort((a, b) => rows[a][6] - rows[b][6]);
 
     this._dsoRowsRef = rows;
     this._dsoUnitVecs = uVecs;
     this._dsoPhotoIndices = photoIndices;
+    this._dsoByMag = Int32Array.from(withMag);
+    this._dsoNoMag = Int32Array.from(noMag);
   }
 
   /**
@@ -1304,7 +1322,7 @@ export class SkyRenderer {
   }
 
   /**
-   * 6. Deep Sky Objects (15,618 OpenNGC symbols & French/catalog labels matching Astro2001)
+   * 6. Deep Sky Objects (OpenNGC real catalog, sorted by magnitude with Astro2001 effLimitDSO + instrumental/sky reach)
    */
   _renderDeepSkyObjects(ctx, state, projectRaDec, nightVision) {
     const dsoCatalog = state.catalogs.openngc;
@@ -1314,6 +1332,7 @@ export class SkyRenderer {
     const rows = dsoCatalog.rows;
     this._ensureDsoUnitVectors(rows);
     const uVecs = this._dsoUnitVecs;
+    const byMag = this._dsoByMag;
     const camZ = viewport.camZ;
     const horZ = viewport.horZ;
     const fov = viewport.fov;
@@ -1323,38 +1342,37 @@ export class SkyRenderer {
     const maxConeRad = Math.min(Math.PI * 0.95, fov * DEG2RAD * 1.15);
     const minCosC = fov < 135 ? Math.cos(maxConeRad) : -0.95;
 
-    // Adaptive limiting magnitude for DSOs
-    let maxMag = 7.5;
-    if (fov < 55) maxMag = 8.6;
-    if (fov < 30) maxMag = 9.6;
-    if (fov < 16) maxMag = 10.8;
-    if (fov < 7) maxMag = 12.4;
-    if (fov < 2.5) maxMag = 14.5;
-    if (fov < 0.8) maxMag = 17.5;
+    // 1. Zoom-dependent display ceiling (exact Astro2001 effLimitDSO formula: 8.2 at 60°, 9.79 at 24°)
+    const zoomBonus = 4 * Math.log10(60 / Math.max(0.035, fov));
+    let limDSO = 8.2 + zoomBonus;
+
+    // 2. Instrumental & sky brightness reach (Telescope aperture + Bortle sky SQM)
+    const BORTLE_SKY_SB = [null, 21.85, 21.6, 21.4, 20.85, 19.75, 18.8, 18.25, 17.75, 17.2];
+    const bortle = Math.min(9, Math.max(1, Math.round(state.bortleClass || 4)));
+    const skySb = BORTLE_SKY_SB[bortle] || 20.85;
+    const apMm = state.telescopeConfig?.apertureMm || 72;
+    const scopeLimMag = 2.0 + 5 * Math.log10(Math.max(7, apMm)) - Math.max(0, (21.5 - skySb) * 0.38);
+
+    // Cap DSO limiting magnitude by instrument capability when atmosphere is active
+    if (state.toggles.atmosphere) {
+      limDSO = Math.min(limDSO, scopeLimMag + 0.3);
+    }
 
     const degToPx = Math.min(viewport.width, viewport.height) / fov;
+    const showLabels = fov < 35;
 
-    // Spatial grid to prevent symbol/label pile-up in rich cluster complexes (e.g. Sagittarius, Perseus, Virgo)
-    const symbolCellSize = 16;
+    // Spatial deduplication grid to prevent two symbols on the exact same pixel cell
+    const symbolCellSize = 14;
     const occupiedSymbolCells = new Set();
 
     ctx.save();
 
-    for (let i = 0; i < rows.length; i++) {
+    for (let k = 0; k < byMag.length; k++) {
+      const i = byMag[k];
       const row = rows[i];
-      // Schema: [id, m, name, type, ra, dec, mag, sb, maj, min, pa, con, dist, photo]
-      const id = row[0] || '';
-      const messier = row[1] || '';
-      const type = row[3] || 'G';
-      const mag = row[6] ?? 12.8;
-      const isMessier = !!messier;
-      const isNamedIconic = !!(FRENCH_DSO_NAMES[messier] || FRENCH_DSO_NAMES[id]);
-
-      // Filter out faint galaxies at wide/medium FOV so the chart stays as clean as Astro2001
-      const isGalaxy = (type === 'G' || type === 'Gx');
-      const effMaxMag = (isGalaxy && !isMessier && fov > 8) ? (maxMag - 1.1) : maxMag;
-
-      if (!isMessier && !isNamedIconic && mag > effMaxMag) continue;
+      // Schema: [id, m, name, type, ra, dec, mag, sb, maj, min, pa, con, dist, photo, hubble]
+      const mag = row[6];
+      if (mag > limDSO) break; // Sorted by magnitude ascending: stop immediately at limit!
 
       // 3-multiply dot-product frustum culling BEFORE full projection
       const uOff = i * 3;
@@ -1368,27 +1386,53 @@ export class SkyRenderer {
       const p = viewport.projectUnitVec(ux, uy, uz);
       if (!p.visible) continue;
 
-      const ra = row[4];
-      const dec = row[5];
+      const id = row[0] || '';
+      const messier = row[1] || '';
+      const type = row[3] || 'G';
+      const sb = row[7];
+      const hubble = row[14] || '';
+      const isMessier = !!messier;
+      const isGalaxy = (type === 'G' || type === 'Gx');
 
-      // Avoid drawing dozens of overlapping minor NGC/IC symbols on the exact same pixel cell
+      // Surface-brightness & instrument reach check (Sérsic/Plummer core concentration)
+      let horsPortee = false;
+      if (state.toggles.atmosphere) {
+        if (mag > scopeLimMag - 0.15) {
+          horsPortee = true;
+        } else if (sb != null && type !== 'OCl' && type !== 'OC') {
+          let coreBoost = 1.4;
+          if (isGalaxy) {
+            if (hubble.startsWith('E') || hubble.startsWith('S0') || hubble.startsWith('Sa')) coreBoost = 2.3;
+            else if (hubble.startsWith('Sb')) coreBoost = 1.7;
+            else coreBoost = 1.1;
+          } else if (type === 'GCl' || type === 'GC') {
+            coreBoost = 2.0;
+          }
+          if ((sb - coreBoost) > skySb + 1.4) {
+            horsPortee = true;
+          }
+        }
+      }
+
       const cellKey = `${Math.floor(p.x / symbolCellSize)},${Math.floor(p.y / symbolCellSize)}`;
-      if (!isMessier && !isNamedIconic && occupiedSymbolCells.has(cellKey)) {
+      if (!isMessier && occupiedSymbolCells.has(cellKey)) {
         continue;
       }
       occupiedSymbolCells.add(cellKey);
 
+      const ra = row[4];
+      const dec = row[5];
       const majArcmin = row[8] || 5;
       const minArcmin = row[9] || majArcmin;
-      const paDeg = row[10] ?? 0;
+      const paDeg = row[10];
 
       let majVecX = degToPx / 60;
       let majVecY = 0;
       let minVecX = 0;
       let minVecY = degToPx / 60;
 
-      if (isGalaxy || majArcmin >= 10) {
-        const stepDeg = 0.08;
+      if ((isGalaxy || majArcmin >= 10) && paDeg != null) {
+        const stepDeg = 0.05;
         const stepArcmin = stepDeg * 60;
         const signN = dec <= 89.5 ? 1 : -1;
         const pN = projectRaDec(ra, dec + signN * stepDeg);
@@ -1410,8 +1454,15 @@ export class SkyRenderer {
         }
       }
 
-      const semiMajPx = Math.max(4.5, Math.hypot(majVecX, majVecY) * majArcmin * 0.5);
-      const semiMinPx = Math.max(2.8, Math.hypot(minVecX, minVecY) * minArcmin * 0.5);
+      const semiMajPx = Math.max(4.0, Math.hypot(majVecX, majVecY) * majArcmin * 0.5);
+      const semiMinPx = (row[8] && row[9] && paDeg != null)
+        ? Math.max(2.6, Math.hypot(minVecX, minVecY) * minArcmin * 0.5)
+        : semiMajPx;
+
+      const prevAlpha = ctx.globalAlpha;
+      if (horsPortee) {
+        ctx.globalAlpha = prevAlpha * 0.30; // DSO_OUT_ALPHA = 0.30
+      }
 
       const dsoColor = this._drawDsoSymbol(
         ctx,
@@ -1426,40 +1477,33 @@ export class SkyRenderer {
         id,
         messier
       );
+      ctx.globalAlpha = prevAlpha;
 
-      // Queue label for collision-free placement
-      const shouldLabel =
-        (isMessier && fov < 80) ||
-        (isNamedIconic && fov < 55) ||
-        (mag <= maxMag - 0.6 && fov < 28) ||
-        fov < 5.5;
+      // Reserve symbol obstacle so no label is drawn across the symbol
+      this._reserveObstacle(p.x, p.y, Math.min(14, Math.max(4.5, semiMinPx * 0.5)));
 
-      if (shouldLabel) {
-        const frName = FRENCH_DSO_NAMES[messier] || FRENCH_DSO_NAMES[id] || '';
+      // Queue label only when in reach and FOV < 35° (matching Astro2001 drawDSO)
+      if (showLabels && !horsPortee) {
+        const commonName = FRENCH_DSO_NAMES[messier] || FRENCH_DSO_NAMES[id] || row[2] || '';
         const cleanCode = formatCatalogCode(messier || id);
-        let labelText = cleanCode;
-        if (frName) {
-          // Match Astro2001 style: show common French name for iconic nebulae/clusters when zoomed (< 32°),
-          // or concise code + name when appropriate
-          labelText = fov < 26 ? frName : `${cleanCode} · ${frName}`;
-        } else if (row[2] && fov < 15 && !row[2].includes('Cluster')) {
-          labelText = `${cleanCode} · ${row[2]}`;
-        }
+        const labelText = commonName || cleanCode;
+        const hasCommonName = !!commonName;
 
-        const rLabelOff = Math.min(28, Math.max(6, Math.min(semiMajPx, semiMinPx) * 0.65 + 4));
-        const priority = (isMessier ? 52 : isNamedIconic ? 48 : 34) + Math.max(0, 12 - mag);
+        const rLabelOff = Math.min(26, Math.max(6, Math.min(semiMajPx, semiMinPx) * 0.65 + 4));
+        const priority = (hasCommonName ? 56 : isMessier ? 52 : 34) + Math.max(0, 14 - mag) * 1.5;
 
         this._queueLabel({
+          category: 'dso',
           text: labelText,
           x: p.x,
           y: p.y,
           offsetPx: rLabelOff,
           priority,
-          font: (isMessier || isNamedIconic)
+          font: (hasCommonName || isMessier)
             ? '500 11px "IBM Plex Sans", system-ui, -apple-system, sans-serif'
             : '400 10.5px "IBM Plex Sans", system-ui, -apple-system, sans-serif',
           color: dsoColor,
-          alpha: 0.94,
+          alpha: 0.90,
           heightPx: 11
         });
       }
@@ -1468,7 +1512,7 @@ export class SkyRenderer {
         type: 'dso',
         id: row[0],
         messier: row[1],
-        name: FRENCH_DSO_NAMES[messier] || FRENCH_DSO_NAMES[id] || row[2] || row[1] || row[0],
+        name: FRENCH_DSO_NAMES[messier] || FRENCH_DSO_NAMES[id] || row[2] || formatCatalogCode(messier || id),
         x: p.x,
         y: p.y,
         hitRadius: Math.max(10, Math.min(54, semiMajPx + 4)),
@@ -1745,31 +1789,26 @@ export class SkyRenderer {
         }
       }
 
-      // Queue concise Star Name / Bayer designation label for collision-free placement
+      // Queue concise Star Name / Bayer designation label for collision-free placement (matching Astro2001 nameLim)
       const nameEntry = namesMap[i];
       if (nameEntry) {
-        const canShowStarLabel =
-          mag < 2.2 ||
-          (mag < 3.5 && fov < 68) ||
-          (mag < 4.5 && fov < 30) ||
-          (mag < 5.4 && fov < 14) ||
-          fov < 5.5;
-
-        if (canShowStarLabel) {
+        const nameLim = 2.5 + Math.max(0, limitMag - 5.8);
+        if (mag <= nameLim) {
           const conciseLabel = formatConciseStarLabel(nameEntry, fov);
           if (conciseLabel) {
             const isProperName = !(/^[α-ωΑ-Ω0-9]/.test(conciseLabel));
             this._queueLabel({
+              category: 'star',
               text: conciseLabel,
               x: p.x,
               y: p.y,
               offsetPx: radius + 4.5,
-              priority: (isProperName ? 64 : 44) - mag * 5,
+              priority: (isProperName ? 64 : 48) - mag * 5,
               font: mag < 2.3
                 ? '600 11.5px "IBM Plex Sans", system-ui, -apple-system, sans-serif'
                 : '400 10.5px "IBM Plex Sans", system-ui, -apple-system, sans-serif',
-              color: nightVision ? '#ff8064' : (mag < 2.3 ? '#f0f5ff' : 'rgba(214, 226, 248, 0.90)'),
-              alpha: mag < 2.5 ? 0.95 : 0.86,
+              color: nightVision ? '#ff8064' : (mag < 2.3 ? '#f0f5ff' : 'rgba(206, 220, 246, 0.78)'),
+              alpha: mag < 2.5 ? 0.92 : 0.76,
               heightPx: 11
             });
           }
@@ -1781,11 +1820,14 @@ export class SkyRenderer {
         const raU16 = starsView.getUint16(offset, true);
         const decI16 = starsView.getInt16(offset + 2, true);
         const conIdx = starsView.getUint8(offset + 7);
+        const dispName = formatConciseStarLabel(nameEntry, 1)
+          || (Array.isArray(nameEntry) && nameEntry[2] ? `HD ${nameEntry[2]}` : '')
+          || (Array.isArray(nameEntry) && nameEntry[1] ? `HIP ${nameEntry[1]}` : `Étoile #${i}`);
         this.screenTargets.push({
           type: 'star',
           starIdx: i,
           id: `STAR:${i}`,
-          name: nameEntry ? (Array.isArray(nameEntry) ? nameEntry[0] : nameEntry) : `HD ${100000 + i}`,
+          name: dispName,
           ra: (raU16 / 65535) * 360,
           dec: (decI16 / 32767) * 90,
           mag,
