@@ -19,7 +19,7 @@ import {
   getShortcutMap,
   normalizeShortcutKey,
   getDefaultToggleState
-} from './features.js?v=8';
+} from './features.js?v=9';
 
 import {
   initI18n,
@@ -28,7 +28,7 @@ import {
   t,
   getConstellationName,
   applyDomTranslations
-} from './i18n.js?v=8';
+} from './i18n.js?v=9';
 
 import {
   dateToJD,
@@ -43,7 +43,7 @@ import {
   bvToTemperatureK,
   computeStellarRadiusSolar,
   formatAltitudeWithFists
-} from './astro/time.js?v=8';
+} from './astro/time.js?v=9';
 
 import {
   computeSolarSystem,
@@ -51,14 +51,14 @@ import {
   getPlanetMoons,
   computeAsteroids,
   DEFAULT_ASTEROIDS
-} from './astro/solar-system.js?v=8';
+} from './astro/solar-system.js?v=9';
 
 import {
   computeAllSatellites,
   predictSatellitePasses,
   fetchCelestrakTLEs,
   DEFAULT_SATELLITES
-} from './astro/sgp4.js?v=8';
+} from './astro/sgp4.js?v=9';
 
 import {
   computeRiseTransitSet,
@@ -66,13 +66,13 @@ import {
   computeMeteorShowers,
   computeEventsCalendar,
   DEFAULT_METEOR_SHOWERS
-} from './astro/events.js?v=8';
+} from './astro/events.js?v=9';
 
-import { SkyViewport } from './render/projection.js?v=8';
-import { SkyRenderer } from './render/sky-renderer.js?v=8';
-import { ObjectCardUI } from './ui/object-card.js?v=8';
-import { PanelsUI } from './ui/panels.js?v=8';
-import { CommandPaletteUI } from './ui/command-palette.js?v=8';
+import { SkyViewport } from './render/projection.js?v=9';
+import { SkyRenderer } from './render/sky-renderer.js?v=9';
+import { ObjectCardUI } from './ui/object-card.js?v=9';
+import { PanelsUI } from './ui/panels.js?v=9';
+import { CommandPaletteUI } from './ui/command-palette.js?v=9';
 
 const COMPASS_DIRS = ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 'S', 'SSO', 'SO', 'OSO', 'O', 'ONO', 'NO', 'NNO'];
 
@@ -1945,6 +1945,125 @@ export class PlanetariumApp {
       }
     }
     return out;
+  }
+
+  /**
+   * Find the nearest city in the 33,848 embedded cities catalog using Haversine distance
+   */
+  findNearestEmbeddedCity(lat, lon) {
+    const citiesCat = this.state.catalogs.cities;
+    if (!citiesCat || !citiesCat.rows || citiesCat.rows.length === 0) return null;
+
+    const deg2rad = Math.PI / 180;
+    const lat1 = lat * deg2rad;
+    const cosLat1 = Math.cos(lat1);
+    let bestRow = null;
+    let bestDistKm = Infinity;
+
+    const rows = citiesCat.rows;
+    for (let i = 0; i < rows.length; i++) {
+      const r = rows[i];
+      const dLat = (r[2] - lat) * deg2rad;
+      const dLon = (r[3] - lon) * deg2rad;
+      const a = Math.sin(dLat * 0.5) ** 2 + cosLat1 * Math.cos(r[2] * deg2rad) * (Math.sin(dLon * 0.5) ** 2);
+      const distKm = 12742 * Math.asin(Math.min(1, Math.sqrt(a)));
+      if (distKm < bestDistKm) {
+        bestDistKm = distKm;
+        bestRow = r;
+      }
+    }
+
+    if (!bestRow) return null;
+    return {
+      name: bestRow[0],
+      country: bestRow[1] || '',
+      lat: bestRow[2],
+      lon: bestRow[3],
+      alt: bestRow[4] ?? 50,
+      tz: bestRow[5] || Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
+      distKm: bestDistKm
+    };
+  }
+
+  /**
+   * Reverse-geocode GPS / manual coordinates (lat, lon) to a human-readable street/city address
+   * and terrain elevation, with offline fallback to the 33,848 embedded cities catalog.
+   */
+  async resolveLocationFromCoords(lat, lon, sensorAlt = null) {
+    const nearest = this.findNearestEmbeddedCity(lat, lon);
+    const defaultTz = nearest?.tz || Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+    let resolvedName = nearest
+      ? (nearest.distKm <= 3.5 ? nearest.name : `Près de ${nearest.name} (${nearest.distKm.toFixed(1)} km)`)
+      : `${lat.toFixed(3)}°, ${lon.toFixed(3)}°`;
+    let resolvedCountry = nearest?.country || '';
+    let resolvedAlt = sensorAlt !== null && Number.isFinite(sensorAlt) ? Math.round(sensorAlt) : (nearest?.alt ?? 50);
+
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+      return { name: resolvedName, country: resolvedCountry, lat, lon, alt: resolvedAlt, tz: defaultTz };
+    }
+
+    const lang = this.state.lang || 'fr';
+
+    // 1. Reverse geocoding (OpenStreetMap Nominatim primary, BigDataCloud fallback)
+    const geocodePromise = (async () => {
+      try {
+        const url = `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lon)}&zoom=16&addressdetails=1&accept-language=${encodeURIComponent(lang)}`;
+        const res = await fetch(url, { headers: { Accept: 'application/json' } });
+        if (res.ok) {
+          const data = await res.json();
+          const addr = data.address || {};
+          const locality = addr.city || addr.town || addr.village || addr.municipality || addr.hamlet || addr.county || '';
+          const roadOrSuburb = addr.road || addr.pedestrian || addr.suburb || addr.neighbourhood || addr.quarter || addr.locality || '';
+          const cc = (addr.country_code || '').toUpperCase();
+          if (cc) resolvedCountry = cc;
+
+          if (roadOrSuburb && locality && roadOrSuburb.toLowerCase() !== locality.toLowerCase()) {
+            resolvedName = `${roadOrSuburb}, ${locality}`;
+          } else if (locality) {
+            resolvedName = addr.postcode ? `${locality} (${addr.postcode})` : locality;
+          } else if (data.name) {
+            resolvedName = data.name;
+          }
+          return;
+        }
+      } catch (_) {}
+
+      try {
+        const bdcUrl = `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${encodeURIComponent(lat)}&longitude=${encodeURIComponent(lon)}&localityLanguage=${encodeURIComponent(lang)}`;
+        const res = await fetch(bdcUrl);
+        if (res.ok) {
+          const data = await res.json();
+          const locality = data.locality || data.city || data.principalSubdivision || '';
+          if (locality) resolvedName = locality;
+          if (data.countryCode) resolvedCountry = data.countryCode;
+        }
+      } catch (_) {}
+    })();
+
+    // 2. Terrain elevation from Open-Meteo if sensor altitude wasn't provided
+    const elevationPromise = (async () => {
+      if (sensorAlt !== null && Number.isFinite(sensorAlt)) return;
+      try {
+        const elUrl = `https://api.open-meteo.com/v1/elevation?latitude=${encodeURIComponent(lat)}&longitude=${encodeURIComponent(lon)}`;
+        const res = await fetch(elUrl);
+        if (res.ok) {
+          const data = await res.json();
+          if (Array.isArray(data.elevation) && Number.isFinite(data.elevation[0])) {
+            resolvedAlt = Math.round(data.elevation[0]);
+          }
+        }
+      } catch (_) {}
+    })();
+
+    await Promise.allSettled([geocodePromise, elevationPromise]);
+    return {
+      name: resolvedName,
+      country: resolvedCountry,
+      lat,
+      lon,
+      alt: resolvedAlt,
+      tz: defaultTz
+    };
   }
 
   searchCommandPalette(query, limit = 30) {

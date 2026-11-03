@@ -7,11 +7,108 @@
  * 4) Solar System View (3D orbitable heliocentric system with planets & 8 asteroids)
  */
 
-import { PlanetShaderRenderer } from './planet-shader.js?v=8';
-import { MilkyWayAndHipsRenderer } from './milkyway-hips.js?v=8';
+import { PlanetShaderRenderer } from './planet-shader.js?v=9';
+import { MilkyWayAndHipsRenderer } from './milkyway-hips.js?v=9';
 
 const DEG2RAD = Math.PI / 180;
 const RAD2DEG = 180 / Math.PI;
+
+/**
+ * Localized French common names for iconic Deep Sky Objects (matching Astro2001 cartography)
+ */
+const FRENCH_DSO_NAMES = {
+  M1: 'Nébuleuse du Crabe',
+  M8: 'Nébuleuse de la Lagune',
+  M11: 'Amas du Canard sauvage',
+  M13: 'Grand Amas d’Hercule',
+  M16: 'Nébuleuse de l’Aigle',
+  M17: 'Nébuleuse Oméga',
+  M20: 'Nébuleuse Trifide',
+  M24: 'Petit Nuage stellaire du Sagittaire',
+  M27: 'Nébuleuse de l’Haltère',
+  M31: 'Galaxie d’Andromède',
+  M33: 'Galaxie du Triangle',
+  M42: 'Grande Nébuleuse d’Orion',
+  M44: 'Amas de la Crèche (Praesepe)',
+  M45: 'Les Pléiades',
+  M51: 'Galaxie du Tourbillon',
+  M57: 'Nébuleuse de la Lyre',
+  M63: 'Galaxie du Tournesol',
+  M64: 'Galaxie de l’Œil noir',
+  M81: 'Galaxie de Bode',
+  M82: 'Galaxie du Cigare',
+  M83: 'Galaxie du Moulinet austral',
+  M97: 'Nébuleuse du Hibou',
+  M101: 'Galaxie du Moulinet',
+  M104: 'Galaxie du Sombrero',
+  NGC0869: 'h Per (Double Amas Ouest)',
+  NGC0884: 'χ Per (Double Amas Est)',
+  NGC1499: 'Nébuleuse Californie',
+  NGC2237: 'Nébuleuse de la Rosette',
+  NGC3372: 'Nébuleuse de la Carène',
+  NGC4565: 'Galaxie de l’Aiguille',
+  NGC5128: 'Centaurus A',
+  NGC5139: 'Omega Centauri',
+  NGC6888: 'Nébuleuse du Croissant',
+  NGC6960: 'Dentelles du Cygne (Ouest)',
+  NGC6992: 'Dentelles du Cygne (Est)',
+  NGC7000: 'Nébuleuse de l’Amérique du Nord',
+  NGC7293: 'Nébuleuse de l’Hélice',
+  NGC7635: 'Nébuleuse de la Bulle',
+  IC1805: 'Nébuleuse du Cœur',
+  IC1848: 'Nébuleuse de l’Âme',
+  IC0434: 'Nébuleuse de la Tête de Cheval'
+};
+
+/**
+ * Format catalog IDs with clean cartographic spacing (e.g., "M16" -> "M 16", "NGC0869" -> "NGC 869")
+ */
+function formatCatalogCode(code) {
+  if (!code) return '';
+  if (/^M\d+$/i.test(code)) {
+    return `M ${code.slice(1)}`;
+  }
+  if (/^NGC0*(\d+)$/i.test(code)) {
+    return `NGC ${ code.replace(/^NGC0*/i, '') }`;
+  }
+  if (/^IC0*(\d+)$/i.test(code)) {
+    return `IC ${ code.replace(/^IC0*/i, '') }`;
+  }
+  return code;
+}
+
+/**
+ * Format star labels concisely for the sky chart:
+ * - Real proper names ("Mirfak", "Sabik", "Kaus Media", "Nunki", "Vega") are kept as-is.
+ * - Verbose Bayer/Flamsteed Latin genitives ("δ2 Cassiopeiae", "υ Persei", "12 Cassiopeiae")
+ *   are compacted to their Greek/Flamsteed + 3-letter IAU code ("δ2 Cas", "υ Per", "12 Cas")
+ *   so they never clutter the sky map.
+ */
+function formatConciseStarLabel(nameEntry, fov) {
+  if (!nameEntry) return '';
+  const rawName = Array.isArray(nameEntry) ? nameEntry[0] : (nameEntry.name || String(nameEntry));
+  const bayer = Array.isArray(nameEntry) ? nameEntry[2] : '';
+  const conCode = Array.isArray(nameEntry) ? nameEntry[3] : '';
+
+  if (!rawName) return '';
+  // Detect if rawName is a generated Bayer/Flamsteed + Latin genitive (starts with Greek char or digit + space + Latin word)
+  const firstCode = rawName.charCodeAt(0);
+  const isGreekStart = (firstCode >= 0x0391 && firstCode <= 0x03C9);
+  const isNumberStart = (firstCode >= 48 && firstCode <= 57);
+
+  if (isGreekStart || isNumberStart) {
+    // Only show pure Flamsteed numbers when zoomed in (< 14° FOV)
+    if (isNumberStart && fov >= 14) return '';
+    if (bayer && conCode) {
+      return `${bayer} ${conCode}`;
+    }
+    const parts = rawName.split(/\s+/);
+    if (parts.length >= 2 && conCode) {
+      return `${parts[0]} ${conCode}`;
+    }
+  }
+  return rawName;
+}
 
 /**
  * Convert B-V color index (-0.4 to +2.0) to RGB color string
@@ -24,29 +121,29 @@ export function bvToRgb(bv, nightVision = false) {
   let r, g, b;
   if (t < 0.0) {
     const f = (t + 0.4) / 0.4;
-    r = 155 + f * 45;
-    g = 178 + f * 45;
+    r = 165 + f * 40;
+    g = 190 + f * 38;
     b = 255;
   } else if (t < 0.4) {
     const f = t / 0.4;
-    r = 200 + f * 55;
-    g = 223 + f * 32;
-    b = 255 - f * 15;
+    r = 205 + f * 50;
+    g = 228 + f * 27;
+    b = 255 - f * 12;
   } else if (t < 0.8) {
     const f = (t - 0.4) / 0.4;
     r = 255;
-    g = 255 - f * 22;
-    b = 240 - f * 55;
+    g = 255 - f * 20;
+    b = 243 - f * 50;
   } else if (t < 1.4) {
     const f = (t - 0.8) / 0.6;
     r = 255;
-    g = 233 - f * 48;
-    b = 185 - f * 75;
+    g = 235 - f * 45;
+    b = 193 - f * 72;
   } else {
     const f = (t - 1.4) / 0.6;
     r = 255;
-    g = 185 - f * 40;
-    b = 110 - f * 45;
+    g = 190 - f * 38;
+    b = 121 - f * 42;
   }
   return `rgb(${Math.round(r)},${Math.round(g)},${Math.round(b)})`;
 }
@@ -65,6 +162,14 @@ export class SkyRenderer {
 
     // Active screen hit targets populated during each render frame for click/hover selection
     this.screenTargets = [];
+
+    // 2D Screen-Space Label Collision Avoidance Engine
+    this.placedLabelBoxes = [];
+    this.deferredLabels = [];
+
+    // Telemetry stats for bottom-left Astro2001 status strip
+    this.lastRenderMs = 2.5;
+    this.lastLimitMag = 6.5;
 
     // Shooting star particles for active meteor showers
     this.meteorsParticles = [];
@@ -96,14 +201,175 @@ export class SkyRenderer {
       entry.img = img;
       if (this._onAssetLoaded) this._onAssetLoaded();
     };
-    img.src = `assets/dso/${photoFilename}?v=8`;
+    img.src = `assets/dso/${photoFilename}?v=9`;
     return entry;
   }
 
   /**
-   * Main render entry point for all 4 views
+   * Reset label bounding boxes and deferred label queue at the start of each frame
+   */
+  _resetLabelEngine() {
+    this.placedLabelBoxes = [];
+    this.deferredLabels = [];
+  }
+
+  /**
+   * Reserve a circular/rectangular screen area (e.g. around a planet disk or very bright star)
+   * so no text label gets drawn across the body itself.
+   */
+  _reserveObstacle(x, y, radiusPx) {
+    const r = Math.max(3, radiusPx);
+    this.placedLabelBoxes.push({
+      x1: x - r,
+      y1: y - r,
+      x2: x + r,
+      y2: y + r
+    });
+  }
+
+  /**
+   * Queue a label for prioritized, collision-free screen-space placement
+   */
+  _queueLabel(opts) {
+    this.deferredLabels.push(opts);
+  }
+
+  _isBoxCollisionFree(x1, y1, x2, y2) {
+    const w = this.viewport.width;
+    const h = this.viewport.height;
+    // Keep away from top bar, bottom dock, and screen edges
+    if (x1 < 14 || x2 > w - 14 || y1 < 54 || y2 > h - 52) {
+      return false;
+    }
+    const boxes = this.placedLabelBoxes;
+    for (let i = 0; i < boxes.length; i++) {
+      const b = boxes[i];
+      if (x1 < b.x2 && x2 > b.x1 && y1 < b.y2 && y2 > b.y1) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  /**
+   * Place all queued labels in descending priority order, testing candidate anchor positions
+   * so labels never overlap each other or bright objects.
+   */
+  _flushDeferredLabels(ctx, nightVision) {
+    if (!this.deferredLabels.length) return;
+
+    this.deferredLabels.sort((a, b) => (b.priority || 0) - (a.priority || 0));
+
+    ctx.save();
+    ctx.textBaseline = 'alphabetic';
+    ctx.lineJoin = 'round';
+    ctx.miterLimit = 2;
+
+    for (let i = 0; i < this.deferredLabels.length; i++) {
+      const item = this.deferredLabels[i];
+      const text = item.text;
+      if (!text) continue;
+
+      ctx.font = item.font || '500 11px "IBM Plex Sans", system-ui, -apple-system, sans-serif';
+      const metrics = ctx.measureText(text);
+      const textW = Math.ceil(metrics.width);
+      const textH = item.heightPx || 11;
+      const padX = item.padX ?? 5;
+      const padY = item.padY ?? 3;
+      const off = item.offsetPx ?? 6;
+      const ax = item.x;
+      const ay = item.y;
+
+      let candidates;
+      if (item.centered) {
+        candidates = [
+          { tx: ax, ty: ay, align: 'center', x1: ax - textW * 0.5 - padX, y1: ay - textH - padY, x2: ax + textW * 0.5 + padX, y2: ay + padY },
+          { tx: ax, ty: ay - 14, align: 'center', x1: ax - textW * 0.5 - padX, y1: ay - 14 - textH - padY, x2: ax + textW * 0.5 + padX, y2: ay - 14 + padY },
+          { tx: ax, ty: ay + 16, align: 'center', x1: ax - textW * 0.5 - padX, y1: ay + 16 - textH - padY, x2: ax + textW * 0.5 + padX, y2: ay + 16 + padY }
+        ];
+      } else {
+        candidates = [
+          // 1. Right of symbol
+          {
+            tx: ax + off,
+            ty: ay + 3.5,
+            align: 'left',
+            x1: ax + off - padX,
+            y1: ay + 3.5 - textH - padY,
+            x2: ax + off + textW + padX,
+            y2: ay + 3.5 + padY
+          },
+          // 2. Top-Right of symbol
+          {
+            tx: ax + off * 0.75,
+            ty: ay - off * 0.55 - 2,
+            align: 'left',
+            x1: ax + off * 0.75 - padX,
+            y1: ay - off * 0.55 - 2 - textH - padY,
+            x2: ax + off * 0.75 + textW + padX,
+            y2: ay - off * 0.55 - 2 + padY
+          },
+          // 3. Bottom-Right of symbol
+          {
+            tx: ax + off * 0.75,
+            ty: ay + off * 0.55 + textH,
+            align: 'left',
+            x1: ax + off * 0.75 - padX,
+            y1: ay + off * 0.55 - padY,
+            x2: ax + off * 0.75 + textW + padX,
+            y2: ay + off * 0.55 + textH + padY
+          },
+          // 4. Left of symbol
+          {
+            tx: ax - off,
+            ty: ay + 3.5,
+            align: 'right',
+            x1: ax - off - textW - padX,
+            y1: ay + 3.5 - textH - padY,
+            x2: ax - off + padX,
+            y2: ay + 3.5 + padY
+          }
+        ];
+      }
+
+      let chosen = null;
+      for (let c = 0; c < candidates.length; c++) {
+        const cand = candidates[c];
+        if (this._isBoxCollisionFree(cand.x1, cand.y1, cand.x2, cand.y2)) {
+          chosen = cand;
+          break;
+        }
+      }
+
+      if (!chosen) continue;
+
+      this.placedLabelBoxes.push({
+        x1: chosen.x1,
+        y1: chosen.y1,
+        x2: chosen.x2,
+        y2: chosen.y2
+      });
+
+      ctx.textAlign = chosen.align;
+      ctx.globalAlpha = item.alpha ?? 0.92;
+
+      // Subtle dark cartographic halo for legibility over Milky Way / DSS2 / grids
+      ctx.strokeStyle = nightVision ? 'rgba(10, 0, 0, 0.92)' : 'rgba(3, 6, 14, 0.88)';
+      ctx.lineWidth = item.haloWidth ?? 2.8;
+      ctx.strokeText(text, chosen.tx, chosen.ty);
+
+      ctx.fillStyle = item.color || (nightVision ? '#ff7a60' : '#dce8ff');
+      ctx.fillText(text, chosen.tx, chosen.ty);
+    }
+
+    ctx.restore();
+  }
+
+  /**
+   * Main render entry point for all views
    */
   render(state) {
+    const t0 = performance.now();
     const { ctx, viewport } = this;
     const w = viewport.width;
     const h = viewport.height;
@@ -111,6 +377,7 @@ export class SkyRenderer {
     const isAlmanach = state.theme === 'almanach';
 
     this.screenTargets = [];
+    this._resetLabelEngine();
 
     ctx.save();
     ctx.clearRect(0, 0, w, h);
@@ -178,7 +445,12 @@ export class SkyRenderer {
       });
     }
 
-    // 3. Coordinate Grids (Equatorial, Azimuthal, Ecliptic)
+    // 2b. Embedded DSO Photos (drawn under stars so field stars shine crisply on top of nebulae)
+    if (state.toggles.dso && state.toggles.dsoPhotos && !state.toggles.dssHips && state.catalogs.openngc) {
+      this._renderDsoPhotosLayer(ctx, state, projectRaDec, nightVision);
+    }
+
+    // 3. Coordinate Grids (Equatorial in fine indigo-violet, Azimuthal in fine emerald-teal, Ecliptic)
     if (state.toggles.gridEquatorial) {
       this._renderEquatorialGrid(ctx, state, projectRaDec, nightVision, isAlmanach);
     }
@@ -189,7 +461,7 @@ export class SkyRenderer {
       this._renderEcliptic(ctx, state, projectRaDec, nightVision, isAlmanach);
     }
 
-    // 4. Constellations (Official IAU Boundaries, Lines, Translated Names)
+    // 4. Constellations (Official IAU Boundaries & Luminous Two-Pass Lines)
     if (state.catalogs.constellations) {
       if (state.toggles.constellationBounds) {
         this._renderConstellationBounds(ctx, state, projectRaDec, nightVision, isAlmanach);
@@ -202,17 +474,17 @@ export class SkyRenderer {
       }
     }
 
-    // 5. Deep Sky Objects (15,618 OpenNGC + 135 Real Photos in Additive Blending)
-    if (state.toggles.dso && state.catalogs.openngc) {
-      this._renderDeepSkyObjects(ctx, state, projectRaDec, nightVision, isAlmanach);
-    }
-
-    // 6. Stars (871,136 ATHYG v3.2 sorted by magnitude + 3,428 names + 3,309 WDS + 882 GCVS)
+    // 5. Stars (871,136 ATHYG v3.2 sorted by magnitude + subtle WDS ticks & GCVS rings)
     if (state.toggles.stars && state.catalogs.starsBin) {
       this._renderStars(ctx, state, projectRaDec, nightVision, isAlmanach);
     }
 
-    // 7. Meteor Showers (13 showers + radiants + shooting stars)
+    // 6. Deep Sky Objects (15,618 OpenNGC symbols & French/catalog labels)
+    if (state.toggles.dso && state.catalogs.openngc) {
+      this._renderDeepSkyObjects(ctx, state, projectRaDec, nightVision, isAlmanach);
+    }
+
+    // 7. Meteor Showers (13 showers + radiants)
     if (state.toggles.meteors && state.activeMeteors) {
       this._renderMeteorShowers(ctx, state, projectRaDec, nightVision);
     }
@@ -236,6 +508,9 @@ export class SkyRenderer {
     if (state.tracedTrajectory && state.tracedTrajectory.length > 1) {
       this._renderObjectTrace(ctx, state.tracedTrajectory, projectRaDec, nightVision);
     }
+
+    // 11b. Flush all queued sky labels with 2D bounding-box collision avoidance!
+    this._flushDeferredLabels(ctx, nightVision);
 
     // 12. Ground & « Mon horizon » 360° Custom Relief Silhouette + Cardinals (in Terrestrial / Zenith views)
     if (viewport.viewMode === 'terrestrial') {
@@ -268,6 +543,44 @@ export class SkyRenderer {
       this._renderTelescopeOverlayAndFinder(ctx, state, eyepieceRadius, nightVision);
     }
 
+    // 14. Bottom-left Astro2001 cartographic telemetry strip
+    const dtMs = performance.now() - t0;
+    this.lastRenderMs = this.lastRenderMs * 0.8 + dtMs * 0.2;
+    this._renderCartographicTelemetry(ctx, state, nightVision);
+
+    ctx.restore();
+  }
+
+  /**
+   * Bottom-left Astro2001 telemetry line:
+   * e.g. "FOV 19,9° · statique · ciel 3,9 ms · m≤8,5 · 871 136 étoiles · 15 618 objets profonds"
+   */
+  _renderCartographicTelemetry(ctx, state, nightVision) {
+    const { viewport } = this;
+    if (viewport.width < 640) return;
+
+    const fovStr = viewport.fov < 10
+      ? viewport.fov.toFixed(2).replace('.', ',')
+      : viewport.fov.toFixed(1).replace('.', ',');
+    const modeStr = state.isPlaying ? `×${state.timeRate || 1}` : 'statique';
+    const msStr = this.lastRenderMs.toFixed(1).replace('.', ',');
+    const magStr = (this.lastLimitMag || 6.5).toFixed(1).replace('.', ',');
+
+    const text = `FOV ${fovStr}° · ${modeStr} · ciel ${msStr} ms · m≤${magStr} · 871 136 étoiles · 15 618 objets profonds`;
+
+    ctx.save();
+    ctx.font = '400 10.5px "IBM Plex Mono", ui-monospace, monospace';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'bottom';
+    const x = 14;
+    const y = viewport.height - 8;
+
+    ctx.strokeStyle = nightVision ? 'rgba(8, 0, 0, 0.88)' : 'rgba(3, 6, 12, 0.82)';
+    ctx.lineWidth = 2.5;
+    ctx.strokeText(text, x, y);
+
+    ctx.fillStyle = nightVision ? 'rgba(215, 70, 52, 0.72)' : 'rgba(155, 175, 205, 0.68)';
+    ctx.fillText(text, x, y);
     ctx.restore();
   }
 
@@ -326,8 +639,8 @@ export class SkyRenderer {
 
     if (isAlmanach && viewport.viewMode !== 'telescope') {
       const grad = ctx.createRadialGradient(w * 0.5, h * 0.5, 10, w * 0.5, h * 0.5, Math.max(w, h) * 0.7);
-      grad.addColorStop(0, '#171d29');
-      grad.addColorStop(1, '#0d111a');
+      grad.addColorStop(0, '#141924');
+      grad.addColorStop(1, '#0a0e16');
       ctx.fillStyle = grad;
       ctx.fillRect(0, 0, w, h);
       return;
@@ -337,44 +650,40 @@ export class SkyRenderer {
       ? state.sun.alt
       : -30;
 
-    let topColor = '#03060f';
-    let midColor = '#070d1d';
-    let horColor = '#0e1930';
+    // Deep, velvet observatory night gradient matching Astro2001
+    let topColor = '#02040a';
+    let midColor = '#050a16';
+    let horColor = '#0a1326';
 
     if (sunAlt > 10) {
-      // Full daylight
       topColor = '#1c56a8';
       midColor = '#3a7bd5';
       horColor = '#89b9f0';
     } else if (sunAlt > -1) {
-      // Sunset / Sunrise golden hour
       const t = (sunAlt + 1) / 11;
       topColor = this._lerpHex('#0d224c', '#1c56a8', t);
       midColor = this._lerpHex('#354b7c', '#3a7bd5', t);
       horColor = this._lerpHex('#d97143', '#89b9f0', t);
     } else if (sunAlt > -6) {
-      // Civil twilight
       const t = (sunAlt + 6) / 5;
       topColor = this._lerpHex('#060f26', '#0d224c', t);
       midColor = this._lerpHex('#14254b', '#354b7c', t);
       horColor = this._lerpHex('#7e3d4a', '#d97143', t);
     } else if (sunAlt > -12) {
-      // Nautical twilight
       const t = (sunAlt + 12) / 6;
-      topColor = this._lerpHex('#040814', '#060f26', t);
-      midColor = this._lerpHex('#091328', '#14254b', t);
-      horColor = this._lerpHex('#23294a', '#7e3d4a', t);
+      topColor = this._lerpHex('#030712', '#060f26', t);
+      midColor = this._lerpHex('#081124', '#14254b', t);
+      horColor = this._lerpHex('#1f2644', '#7e3d4a', t);
     } else if (sunAlt > -18) {
-      // Astronomical twilight
       const t = (sunAlt + 18) / 6;
-      topColor = this._lerpHex('#03060f', '#040814', t);
-      midColor = this._lerpHex('#070d1d', '#091328', t);
-      horColor = this._lerpHex('#0e1930', '#23294a', t);
+      topColor = this._lerpHex('#02040a', '#030712', t);
+      midColor = this._lerpHex('#050a16', '#081124', t);
+      horColor = this._lerpHex('#0a1326', '#1f2644', t);
     }
 
     const grad = ctx.createLinearGradient(0, 0, 0, h);
     grad.addColorStop(0, topColor);
-    grad.addColorStop(0.55, midColor);
+    grad.addColorStop(0.58, midColor);
     grad.addColorStop(1, horColor);
     ctx.fillStyle = grad;
     ctx.fillRect(0, 0, w, h);
@@ -391,83 +700,93 @@ export class SkyRenderer {
   }
 
   /**
-   * 3. Coordinate Grids: Equatorial (RA/Dec), Azimuthal (Alt/Az), and Ecliptic
+   * 3. Coordinate Grids:
+   * - Equatorial (RA/Dec): Fine indigo-violet hairlines matching Astro2001 (`rgba(142, 118, 232, 0.34)`)
+   * - Azimuthal (Alt/Az): Fine emerald-teal hairlines matching Astro2001 (`rgba(68, 185, 138, 0.32)`)
    */
   _renderEquatorialGrid(ctx, state, projectRaDec, nightVision, isAlmanach) {
+    const { viewport } = this;
+    const fov = viewport.fov;
+
     ctx.save();
     ctx.strokeStyle = nightVision
-      ? 'rgba(220, 40, 30, 0.24)'
+      ? 'rgba(210, 42, 32, 0.28)'
       : isAlmanach
-      ? 'rgba(215, 180, 110, 0.25)'
-      : 'rgba(95, 165, 255, 0.22)';
-    ctx.fillStyle = nightVision ? 'rgba(255, 70, 50, 0.65)' : 'rgba(130, 190, 255, 0.68)';
-    ctx.lineWidth = 1;
-    ctx.font = '10px system-ui, -apple-system, sans-serif';
+      ? 'rgba(185, 155, 110, 0.28)'
+      : 'rgba(142, 118, 232, 0.34)';
+    ctx.fillStyle = nightVision ? 'rgba(245, 75, 55, 0.72)' : 'rgba(176, 156, 248, 0.78)';
+    ctx.lineWidth = 0.75;
+    ctx.font = '500 10px "IBM Plex Mono", ui-monospace, monospace';
 
-    const raStep = this.viewport.fov < 25 ? 10 : 15; // 15° = 1h
-    const decStep = this.viewport.fov < 25 ? 5 : 15;
+    const raStep = fov < 12 ? 5 : fov < 32 ? 10 : 15;
+    const decStep = fov < 12 ? 2.5 : fov < 32 ? 5 : 15;
+    const maxJump = Math.max(viewport.width, viewport.height) * 0.35;
 
     // Declination parallels
-    for (let dec = -75; dec <= 75; dec += decStep) {
+    for (let dec = -80; dec <= 80; dec += decStep) {
+      if (Math.abs(dec) > 85) continue;
       ctx.beginPath();
-      let started = false;
+      let prev = null;
       let labelPt = null;
-      for (let ra = 0; ra <= 360; ra += 4) {
+      for (let ra = 0; ra <= 360; ra += 2) {
         const p = projectRaDec(ra % 360, dec);
         if (p.visible) {
-          if (!started) {
-            ctx.moveTo(p.x, p.y);
-            started = true;
-          } else {
+          if (prev && Math.hypot(p.x - prev.x, p.y - prev.y) < maxJump) {
             ctx.lineTo(p.x, p.y);
+          } else {
+            ctx.moveTo(p.x, p.y);
           }
-          if (!labelPt && p.x > 60 && p.x < this.viewport.width - 60 && p.y > 60 && p.y < this.viewport.height - 60) {
+          prev = p;
+          if (!labelPt && p.x > 70 && p.x < viewport.width - 90 && p.y > 75 && p.y < viewport.height - 75) {
             labelPt = p;
           }
         } else {
-          started = false;
+          prev = null;
         }
       }
       if (dec === 0) {
         ctx.save();
-        ctx.lineWidth = 1.5;
-        ctx.strokeStyle = nightVision ? 'rgba(255, 60, 40, 0.42)' : 'rgba(120, 195, 255, 0.42)';
+        ctx.lineWidth = 1.15;
+        ctx.strokeStyle = nightVision ? 'rgba(250, 60, 40, 0.45)' : 'rgba(168, 145, 250, 0.52)';
         ctx.stroke();
         ctx.restore();
       } else {
         ctx.stroke();
       }
       if (labelPt) {
-        ctx.fillText(`${dec > 0 ? '+' : ''}${dec}°`, labelPt.x + 4, labelPt.y - 3);
+        const decTxt = `${dec > 0 ? '+' : ''}${Number.isInteger(dec) ? dec : dec.toFixed(1)}°`;
+        ctx.fillText(decTxt, labelPt.x + 4, labelPt.y - 4);
       }
     }
 
     // Right Ascension meridians
     for (let ra = 0; ra < 360; ra += raStep) {
       ctx.beginPath();
-      let started = false;
+      let prev = null;
       let labelPt = null;
-      for (let dec = -85; dec <= 85; dec += 4) {
+      for (let dec = -85; dec <= 85; dec += 2) {
         const p = projectRaDec(ra, dec);
         if (p.visible) {
-          if (!started) {
-            ctx.moveTo(p.x, p.y);
-            started = true;
-          } else {
+          if (prev && Math.hypot(p.x - prev.x, p.y - prev.y) < maxJump) {
             ctx.lineTo(p.x, p.y);
+          } else {
+            ctx.moveTo(p.x, p.y);
           }
-          if (dec === 0 && p.x > 50 && p.x < this.viewport.width - 50 && p.y > 50 && p.y < this.viewport.height - 50) {
+          prev = p;
+          if (!labelPt && p.x > 75 && p.x < viewport.width - 85 && p.y > viewport.height * 0.35 && p.y < viewport.height * 0.72) {
             labelPt = p;
           }
         } else {
-          started = false;
+          prev = null;
         }
       }
       ctx.stroke();
       if (labelPt) {
-        const hours = Math.floor(ra / 15);
-        const mins = Math.round(((ra / 15) - hours) * 60);
-        ctx.fillText(mins ? `${hours}h${mins}m` : `${hours}h`, labelPt.x + 4, labelPt.y + 11);
+        const totalHours = ra / 15;
+        const hoursStr = Number.isInteger(totalHours)
+          ? `${totalHours}h`
+          : `${totalHours.toFixed(1)}h`;
+        ctx.fillText(hoursStr, labelPt.x + 4, labelPt.y + 11);
       }
     }
     ctx.restore();
@@ -475,70 +794,74 @@ export class SkyRenderer {
 
   _renderAzimuthalGrid(ctx, state, nightVision, isAlmanach) {
     const { viewport } = this;
+    const fov = viewport.fov;
+
     ctx.save();
     ctx.strokeStyle = nightVision
-      ? 'rgba(200, 50, 25, 0.24)'
+      ? 'rgba(195, 48, 28, 0.26)'
       : isAlmanach
-      ? 'rgba(170, 200, 150, 0.25)'
-      : 'rgba(235, 175, 85, 0.22)';
-    ctx.fillStyle = nightVision ? 'rgba(240, 75, 45, 0.68)' : 'rgba(245, 195, 110, 0.72)';
-    ctx.lineWidth = 1;
-    ctx.font = '10px system-ui, -apple-system, sans-serif';
+      ? 'rgba(130, 175, 145, 0.28)'
+      : 'rgba(68, 185, 138, 0.32)';
+    ctx.fillStyle = nightVision ? 'rgba(235, 72, 45, 0.70)' : 'rgba(105, 218, 172, 0.78)';
+    ctx.lineWidth = 0.75;
+    ctx.font = '500 10px "IBM Plex Mono", ui-monospace, monospace';
 
-    const altStep = viewport.fov < 25 ? 5 : 15;
-    const azStep = viewport.fov < 25 ? 10 : 15;
+    const altStep = fov < 12 ? 2.5 : fov < 32 ? 5 : 15;
+    const azStep = fov < 12 ? 5 : fov < 32 ? 10 : 15;
+    const maxJump = Math.max(viewport.width, viewport.height) * 0.35;
 
     // Altitude circles
-    for (let alt = 0; alt <= 80; alt += altStep) {
+    for (let alt = 0; alt <= 85; alt += altStep) {
       ctx.beginPath();
-      let started = false;
+      let prev = null;
       let labelPt = null;
-      for (let az = 0; az <= 360; az += 4) {
+      for (let az = 0; az <= 360; az += 2) {
         const p = viewport.projectAltAz(alt, az % 360);
         if (p.visible) {
-          if (!started) {
-            ctx.moveTo(p.x, p.y);
-            started = true;
-          } else {
+          if (prev && Math.hypot(p.x - prev.x, p.y - prev.y) < maxJump) {
             ctx.lineTo(p.x, p.y);
+          } else {
+            ctx.moveTo(p.x, p.y);
           }
-          if (!labelPt && Math.abs(az - viewport.centerAz) < 8 && p.y > 45 && p.y < viewport.height - 45) {
+          prev = p;
+          if (!labelPt && p.x > viewport.width * 0.22 && p.x < viewport.width * 0.78 && p.y > 65 && p.y < viewport.height - 70) {
             labelPt = p;
           }
         } else {
-          started = false;
+          prev = null;
         }
       }
       ctx.stroke();
       if (labelPt && alt > 0) {
-        ctx.fillText(`+${alt}°`, labelPt.x + 4, labelPt.y - 3);
+        const altTxt = `+${Number.isInteger(alt) ? alt : alt.toFixed(1)}°`;
+        ctx.fillText(altTxt, labelPt.x + 4, labelPt.y - 4);
       }
     }
 
     // Azimuth verticals
     for (let az = 0; az < 360; az += azStep) {
       ctx.beginPath();
-      let started = false;
+      let prev = null;
       let labelPt = null;
-      for (let alt = 0; alt <= 85; alt += 4) {
+      for (let alt = 0; alt <= 85; alt += 2) {
         const p = viewport.projectAltAz(alt, az);
         if (p.visible) {
-          if (!started) {
-            ctx.moveTo(p.x, p.y);
-            started = true;
-          } else {
+          if (prev && Math.hypot(p.x - prev.x, p.y - prev.y) < maxJump) {
             ctx.lineTo(p.x, p.y);
+          } else {
+            ctx.moveTo(p.x, p.y);
           }
-          if (alt === 12 && p.x > 45 && p.x < viewport.width - 45 && p.y > 45 && p.y < viewport.height - 45) {
+          prev = p;
+          if (!labelPt && alt >= 5 && p.x > 65 && p.x < viewport.width - 75 && p.y > viewport.height * 0.55 && p.y < viewport.height - 65) {
             labelPt = p;
           }
         } else {
-          started = false;
+          prev = null;
         }
       }
       ctx.stroke();
       if (labelPt) {
-        ctx.fillText(`${az}°`, labelPt.x + 3, labelPt.y - 3);
+        ctx.fillText(`${az}°`, labelPt.x + 4, labelPt.y - 4);
       }
     }
     ctx.restore();
@@ -548,15 +871,16 @@ export class SkyRenderer {
     const eps = 23.43929 * DEG2RAD;
     const sinEps = Math.sin(eps);
     const cosEps = Math.cos(eps);
+    const maxJump = Math.max(this.viewport.width, this.viewport.height) * 0.35;
 
     ctx.save();
-    ctx.strokeStyle = nightVision ? 'rgba(255, 80, 40, 0.45)' : 'rgba(255, 210, 80, 0.42)';
-    ctx.lineWidth = 1.4;
-    ctx.setLineDash([6, 4]);
+    ctx.strokeStyle = nightVision ? 'rgba(255, 80, 40, 0.42)' : 'rgba(235, 190, 78, 0.42)';
+    ctx.lineWidth = 1.1;
+    ctx.setLineDash([7, 5]);
     ctx.beginPath();
 
-    let started = false;
-    for (let lon = 0; lon <= 360; lon += 3) {
+    let prev = null;
+    for (let lon = 0; lon <= 360; lon += 2) {
       const l = (lon % 360) * DEG2RAD;
       const sinL = Math.sin(l);
       const cosL = Math.cos(l);
@@ -564,14 +888,14 @@ export class SkyRenderer {
       const ra = ((Math.atan2(sinL * cosEps, cosL) * RAD2DEG) % 360 + 360) % 360;
       const p = projectRaDec(ra, dec);
       if (p.visible) {
-        if (!started) {
-          ctx.moveTo(p.x, p.y);
-          started = true;
-        } else {
+        if (prev && Math.hypot(p.x - prev.x, p.y - prev.y) < maxJump) {
           ctx.lineTo(p.x, p.y);
+        } else {
+          ctx.moveTo(p.x, p.y);
         }
+        prev = p;
       } else {
-        started = false;
+        prev = null;
       }
     }
     ctx.stroke();
@@ -579,7 +903,7 @@ export class SkyRenderer {
   }
 
   /**
-   * 4. Constellations: Official IAU Boundaries, Lines, and Translated Names
+   * 4. Constellations: Official IAU Boundaries, Two-Pass Luminous Lines, and Translated Names
    */
   _getUniqueIauBoundarySegments(list) {
     if (this._cachedIauSegments && this._cachedIauListRef === list) {
@@ -643,9 +967,9 @@ export class SkyRenderer {
     const maxJump = Math.max(this.viewport.width, this.viewport.height) * 0.35;
 
     ctx.save();
-    ctx.strokeStyle = nightVision ? 'rgba(205, 42, 30, 0.36)' : 'rgba(210, 150, 75, 0.30)';
-    ctx.lineWidth = 1.0;
-    ctx.setLineDash([5, 4]);
+    ctx.strokeStyle = nightVision ? 'rgba(195, 40, 28, 0.32)' : 'rgba(205, 148, 78, 0.26)';
+    ctx.lineWidth = 0.8;
+    ctx.setLineDash([4, 4]);
     ctx.beginPath();
 
     for (const seg of segments) {
@@ -673,23 +997,21 @@ export class SkyRenderer {
     const list = state.catalogs.constellations;
     if (!Array.isArray(list)) return;
 
+    const maxJump = Math.max(this.viewport.width, this.viewport.height) * 0.42;
+
     ctx.save();
-    ctx.strokeStyle = nightVision
-      ? 'rgba(235, 50, 35, 0.45)'
-      : isAlmanach
-      ? 'rgba(225, 190, 120, 0.48)'
-      : 'rgba(110, 175, 255, 0.42)';
-    ctx.lineWidth = 1.25;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.beginPath();
 
     for (const con of list) {
       if (!con.lines) continue;
       for (const poly of con.lines) {
-        ctx.beginPath();
         let prev = null;
         for (let i = 0; i < poly.length; i += 2) {
           const p = projectRaDec(poly[i], poly[i + 1]);
           if (p.visible) {
-            if (prev && Math.hypot(p.x - prev.x, p.y - prev.y) < this.viewport.width * 0.5) {
+            if (prev && Math.hypot(p.x - prev.x, p.y - prev.y) < maxJump) {
               ctx.lineTo(p.x, p.y);
             } else {
               ctx.moveTo(p.x, p.y);
@@ -699,9 +1021,27 @@ export class SkyRenderer {
             prev = null;
           }
         }
-        ctx.stroke();
       }
     }
+
+    // Pass 1: Soft outer luminous glow (Astro2001 style)
+    ctx.strokeStyle = nightVision
+      ? 'rgba(220, 35, 25, 0.14)'
+      : isAlmanach
+      ? 'rgba(215, 180, 110, 0.14)'
+      : 'rgba(92, 150, 255, 0.16)';
+    ctx.lineWidth = 3.2;
+    ctx.stroke();
+
+    // Pass 2: Crisp celestial blue core line
+    ctx.strokeStyle = nightVision
+      ? 'rgba(240, 58, 40, 0.58)'
+      : isAlmanach
+      ? 'rgba(230, 195, 128, 0.62)'
+      : 'rgba(142, 192, 255, 0.68)';
+    ctx.lineWidth = 1.05;
+    ctx.stroke();
+
     ctx.restore();
   }
 
@@ -709,29 +1049,114 @@ export class SkyRenderer {
     const list = state.catalogs.constellations;
     if (!Array.isArray(list)) return;
 
-    ctx.save();
-    ctx.font = '600 11px system-ui, -apple-system, sans-serif';
-    ctx.textAlign = 'center';
-    ctx.fillStyle = nightVision
-      ? 'rgba(245, 75, 55, 0.72)'
+    const color = nightVision
+      ? 'rgba(235, 78, 58, 0.68)'
       : isAlmanach
-      ? 'rgba(235, 205, 145, 0.78)'
-      : 'rgba(150, 200, 255, 0.72)';
+      ? 'rgba(230, 200, 142, 0.72)'
+      : 'rgba(148, 190, 245, 0.68)';
 
     for (const con of list) {
       const p = projectRaDec(con.ra, con.dec);
       if (!p.visible) continue;
-      if (this.viewport.viewMode === 'terrestrial' && state.toggles.ground && p.alt < 0) continue;
+      if (this.viewport.viewMode === 'terrestrial' && state.toggles.ground && p.alt < 2) continue;
 
-      const label = state.getConstellationName ? state.getConstellationName(con.code) : (con.name || con.latin || con.code);
-      ctx.fillText(label.toUpperCase(), p.x, p.y);
+      const label = state.getConstellationName
+        ? state.getConstellationName(con.code)
+        : (con.name || con.latin || con.code);
+
+      this._queueLabel({
+        text: label.toUpperCase(),
+        x: p.x,
+        y: p.y,
+        centered: true,
+        priority: 18,
+        font: '600 11px "IBM Plex Sans", system-ui, -apple-system, sans-serif',
+        color,
+        alpha: 0.78,
+        heightPx: 11,
+        padX: 8,
+        padY: 4
+      });
     }
-    ctx.restore();
   }
 
   /**
-   * 5. Deep Sky Objects (15,618 OpenNGC + 135 Real Photos in Additive Blend)
-   *    Photos are mutually exclusive with HiPS DSS2 and oriented by true astronomical PA (East of Celestial North).
+   * 2b. Embedded DSO Photos Layer (rendered beneath stars so stars remain sharp on top of nebulae)
+   */
+  _renderDsoPhotosLayer(ctx, state, projectRaDec, nightVision) {
+    const dsoCatalog = state.catalogs.openngc;
+    if (!dsoCatalog || !dsoCatalog.rows) return;
+
+    const { viewport } = this;
+    const rows = dsoCatalog.rows;
+    const fov = viewport.fov;
+    const degToPx = Math.min(viewport.width, viewport.height) / fov;
+
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i];
+      if (!row[13]) continue; // Only the 135 objects with an embedded photo
+      const ra = row[4];
+      const dec = row[5];
+      const p = projectRaDec(ra, dec);
+      if (!p.visible) continue;
+      if (viewport.viewMode === 'terrestrial' && state.toggles.ground && p.alt < -2) continue;
+
+      const majArcmin = row[8] || 8;
+      const minArcmin = row[9] || majArcmin;
+      const paDeg = row[10] ?? 0;
+      const approxRadiusPx = (majArcmin / 60) * degToPx * 0.5;
+      if (approxRadiusPx < 4.5) continue;
+
+      const photoEntry = this._getDsoPhoto(row[13]);
+      if (!photoEntry || !photoEntry.loaded || !photoEntry.img) continue;
+
+      const stepDeg = 0.08;
+      const stepArcmin = stepDeg * 60;
+      const signN = dec <= 89.5 ? 1 : -1;
+      const pN = projectRaDec(ra, dec + signN * stepDeg);
+      const cosDec = Math.max(0.05, Math.cos(dec * DEG2RAD));
+      const pE = projectRaDec((ra + stepDeg / cosDec) % 360, dec);
+      if (!pN.visible || !pE.visible) continue;
+
+      const nX = ((pN.x - p.x) * signN) / stepArcmin;
+      const nY = ((pN.y - p.y) * signN) / stepArcmin;
+      const eX = (pE.x - p.x) / stepArcmin;
+      const eY = (pE.y - p.y) / stepArcmin;
+
+      const paRad = paDeg * DEG2RAD;
+      const cosPA = Math.cos(paRad);
+      const sinPA = Math.sin(paRad);
+      const majVecX = cosPA * nX + sinPA * eX;
+      const majVecY = cosPA * nY + sinPA * eY;
+      const minVecX = -sinPA * nX + cosPA * eX;
+      const minVecY = -sinPA * nY + cosPA * eY;
+
+      const semiMajPx = Math.hypot(majVecX, majVecY) * majArcmin * 0.5;
+      if (semiMajPx < 4.5) continue;
+
+      ctx.save();
+      ctx.globalCompositeOperation = 'screen';
+      if (nightVision) {
+        ctx.filter = 'sepia(100%) hue-rotate(-50deg) saturate(400%)';
+      }
+      const padScale = 1.23;
+      const effMaj = Math.max(majArcmin, 14 / Math.max(0.05, Math.hypot(majVecX, majVecY)));
+      const effMin = effMaj * Math.max(0.22, Math.min(1.0, minArcmin / Math.max(0.1, majArcmin)));
+      ctx.transform(majVecX, majVecY, minVecX, minVecY, p.x, p.y);
+      ctx.globalAlpha = Math.min(0.85, 0.42 + Math.log10(Math.max(1, semiMajPx / 5)) * 0.32);
+      ctx.drawImage(
+        photoEntry.img,
+        -effMaj * 0.5 * padScale,
+        -effMin * 0.5 * padScale,
+        effMaj * padScale,
+        effMin * padScale
+      );
+      ctx.restore();
+    }
+  }
+
+  /**
+   * 6. Deep Sky Objects (15,618 OpenNGC symbols & French/catalog labels matching Astro2001)
    */
   _renderDeepSkyObjects(ctx, state, projectRaDec, nightVision) {
     const dsoCatalog = state.catalogs.openngc;
@@ -739,50 +1164,65 @@ export class SkyRenderer {
 
     const { viewport } = this;
     const rows = dsoCatalog.rows;
-    // Limiting magnitude for DSOs scales with zoom (FOV)
     const fov = viewport.fov;
-    let maxMag = 8.2;
-    if (fov < 50) maxMag = 9.8;
-    if (fov < 20) maxMag = 11.5;
-    if (fov < 8) maxMag = 13.2;
-    if (fov < 2.5) maxMag = 15.5;
-    if (fov < 0.8) maxMag = 18.0;
+
+    // Adaptive limiting magnitude for DSOs
+    let maxMag = 7.5;
+    if (fov < 55) maxMag = 8.6;
+    if (fov < 30) maxMag = 9.6;
+    if (fov < 16) maxMag = 10.8;
+    if (fov < 7) maxMag = 12.4;
+    if (fov < 2.5) maxMag = 14.5;
+    if (fov < 0.8) maxMag = 17.5;
 
     const degToPx = Math.min(viewport.width, viewport.height) / fov;
-    // Embedded DSO photos are mutually exclusive with the online HiPS DSS2 survey
-    const showPhotos = !!state.toggles.dsoPhotos && !state.toggles.dssHips;
+
+    // Spatial grid to prevent symbol/label pile-up in rich cluster complexes (e.g. Sagittarius, Perseus, Virgo)
+    const symbolCellSize = 16;
+    const occupiedSymbolCells = new Set();
 
     ctx.save();
-    ctx.font = '10px system-ui, -apple-system, sans-serif';
 
     for (let i = 0; i < rows.length; i++) {
       const row = rows[i];
       // Schema: [id, m, name, type, ra, dec, mag, sb, maj, min, pa, con, dist, photo]
-      const mag = row[6] ?? 12.5;
-      const hasPhoto = !!row[13];
-      const isMessier = !!row[1];
+      const id = row[0] || '';
+      const messier = row[1] || '';
+      const type = row[3] || 'G';
+      const mag = row[6] ?? 12.8;
+      const isMessier = !!messier;
+      const isNamedIconic = !!(FRENCH_DSO_NAMES[messier] || FRENCH_DSO_NAMES[id]);
 
-      if (!isMessier && !hasPhoto && mag > maxMag) continue;
+      // Filter out faint galaxies at wide/medium FOV so the chart stays as clean as Astro2001
+      const isGalaxy = (type === 'G' || type === 'Gx');
+      const effMaxMag = (isGalaxy && !isMessier && fov > 8) ? (maxMag - 1.1) : maxMag;
+
+      if (!isMessier && !isNamedIconic && mag > effMaxMag) continue;
 
       const ra = row[4];
       const dec = row[5];
       const p = projectRaDec(ra, dec);
       if (!p.visible) continue;
-      if (viewport.viewMode === 'terrestrial' && state.toggles.ground && p.alt < -2) continue;
+      if (viewport.viewMode === 'terrestrial' && state.toggles.ground && p.alt < -1) continue;
 
-      const majArcmin = row[8] || 4;
+      // Avoid drawing dozens of overlapping minor NGC/IC symbols on the exact same pixel cell
+      const cellKey = `${Math.floor(p.x / symbolCellSize)},${Math.floor(p.y / symbolCellSize)}`;
+      if (!isMessier && !isNamedIconic && occupiedSymbolCells.has(cellKey)) {
+        continue;
+      }
+      occupiedSymbolCells.add(cellKey);
+
+      const majArcmin = row[8] || 5;
       const minArcmin = row[9] || majArcmin;
       const paDeg = row[10] ?? 0;
-      const approxRadiusPx = Math.max(4, (majArcmin / 60) * degToPx * 0.5);
 
-      // Compute exact local Celestial North (+Dec) and Celestial East (+RA) screen vectors per arcminute
       let majVecX = degToPx / 60;
       let majVecY = 0;
       let minVecX = 0;
       let minVecY = degToPx / 60;
 
-      if ((showPhotos && hasPhoto && approxRadiusPx >= 5) || isMessier || mag <= maxMag - 0.5 || fov < 15) {
-        const stepDeg = 0.08; // 4.8 arcmin step on sky
+      if (isGalaxy || majArcmin >= 10) {
+        const stepDeg = 0.08;
         const stepArcmin = stepDeg * 60;
         const signN = dec <= 89.5 ? 1 : -1;
         const pN = projectRaDec(ra, dec + signN * stepDeg);
@@ -794,8 +1234,6 @@ export class SkyRenderer {
           const nY = ((pN.y - p.y) * signN) / stepArcmin;
           const eX = (pE.x - p.x) / stepArcmin;
           const eY = (pE.y - p.y) / stepArcmin;
-
-          // Position Angle PA is measured in degrees from Celestial North (+Dec) toward Celestial East (+RA)
           const paRad = paDeg * DEG2RAD;
           const cosPA = Math.cos(paRad);
           const sinPA = Math.sin(paRad);
@@ -807,140 +1245,218 @@ export class SkyRenderer {
       }
 
       const semiMajPx = Math.max(4.5, Math.hypot(majVecX, majVecY) * majArcmin * 0.5);
-      const semiMinPx = Math.max(2.5, Math.hypot(minVecX, minVecY) * minArcmin * 0.5);
+      const semiMinPx = Math.max(2.8, Math.hypot(minVecX, minVecY) * minArcmin * 0.5);
 
-      // 135 Embedded Photos mapped in additive blending ('screen') with true sky size & PA orientation
-      if (showPhotos && hasPhoto && semiMajPx >= 5) {
-        const photoEntry = this._getDsoPhoto(row[13]);
-        if (photoEntry && photoEntry.loaded && photoEntry.img) {
-          ctx.save();
-          ctx.globalCompositeOperation = 'screen';
-          if (nightVision) {
-            ctx.filter = 'sepia(100%) hue-rotate(-50deg) saturate(400%)';
-          }
-          // In canonical PNG (128x128), r=1.0 is at 52/64 of half-width (padScale = 64/52 = 1.23)
-          const padScale = 1.23;
-          const effMaj = Math.max(majArcmin, (16 / Math.max(0.05, Math.hypot(majVecX, majVecY))));
-          const effMin = effMaj * Math.max(0.22, Math.min(1.0, minArcmin / Math.max(0.1, majArcmin)));
-          ctx.transform(majVecX, majVecY, minVecX, minVecY, p.x, p.y);
-          ctx.globalAlpha = Math.min(0.92, 0.48 + Math.log10(Math.max(1, semiMajPx / 5)) * 0.35);
-          ctx.drawImage(
-            photoEntry.img,
-            -effMaj * 0.5 * padScale,
-            -effMin * 0.5 * padScale,
-            effMaj * padScale,
-            effMin * padScale
-          );
-          ctx.restore();
-        }
-      }
+      const dsoColor = this._drawDsoSymbol(
+        ctx,
+        p.x,
+        p.y,
+        semiMajPx,
+        semiMinPx,
+        majVecX,
+        majVecY,
+        type,
+        nightVision,
+        id,
+        messier
+      );
 
-      // Draw DSO astronomical symbol when zoomed or when Messier/bright
-      if (isMessier || mag <= maxMag - 0.5 || fov < 15) {
-        const type = row[3] || 'G';
-        this._drawDsoSymbol(ctx, p.x, p.y, semiMajPx, semiMinPx, majVecX, majVecY, minVecX, minVecY, majArcmin, minArcmin, type, nightVision);
+      // Queue label for collision-free placement
+      const shouldLabel =
+        (isMessier && fov < 80) ||
+        (isNamedIconic && fov < 55) ||
+        (mag <= maxMag - 0.6 && fov < 28) ||
+        fov < 5.5;
 
-        if ((isMessier && fov < 75) || (mag < 8.5 && fov < 35) || fov < 6) {
-          const label = row[1] ? (row[2] ? `${row[1]} · ${row[2]}` : row[1]) : (row[2] || row[0]);
-          ctx.fillStyle = nightVision ? 'rgba(255, 95, 70, 0.85)' : 'rgba(155, 225, 200, 0.88)';
-          const labelOffset = Math.min(42, Math.max(6, semiMinPx + 5));
-          ctx.fillText(label, p.x + labelOffset, p.y + 3);
+      if (shouldLabel) {
+        const frName = FRENCH_DSO_NAMES[messier] || FRENCH_DSO_NAMES[id] || '';
+        const cleanCode = formatCatalogCode(messier || id);
+        let labelText = cleanCode;
+        if (frName) {
+          // Match Astro2001 style: show common French name for iconic nebulae/clusters when zoomed (< 32°),
+          // or concise code + name when appropriate
+          labelText = fov < 26 ? frName : `${cleanCode} · ${frName}`;
+        } else if (row[2] && fov < 15 && !row[2].includes('Cluster')) {
+          labelText = `${cleanCode} · ${row[2]}`;
         }
 
-        this.screenTargets.push({
-          type: 'dso',
-          id: row[0],
-          messier: row[1],
-          name: row[2] || row[1] || row[0],
+        const rLabelOff = Math.min(28, Math.max(6, Math.min(semiMajPx, semiMinPx) * 0.65 + 4));
+        const priority = (isMessier ? 52 : isNamedIconic ? 48 : 34) + Math.max(0, 12 - mag);
+
+        this._queueLabel({
+          text: labelText,
           x: p.x,
           y: p.y,
-          hitRadius: Math.max(10, Math.min(60, semiMajPx + 4)),
-          priority: isMessier ? 25 : 15,
-          data: row
+          offsetPx: rLabelOff,
+          priority,
+          font: (isMessier || isNamedIconic)
+            ? '500 11px "IBM Plex Sans", system-ui, -apple-system, sans-serif'
+            : '400 10.5px "IBM Plex Sans", system-ui, -apple-system, sans-serif',
+          color: dsoColor,
+          alpha: 0.94,
+          heightPx: 11
         });
       }
-    }
-    ctx.restore();
-  }
 
-  _drawDsoSymbol(ctx, x, y, semiMajPx, semiMinPx, majVecX, majVecY, minVecX, minVecY, majArcmin, minArcmin, type, nightVision) {
-    ctx.save();
-    ctx.lineWidth = 1.15;
-
-    if (type === 'G' || type === 'Gx') {
-      // Galaxy: ellipse oriented strictly along (majVec, minVec) at true angular size
-      const aAngle = Math.atan2(majVecY, majVecX);
-      ctx.translate(x, y);
-      ctx.rotate(aAngle);
-      ctx.strokeStyle = nightVision ? 'rgba(255, 80, 56, 0.78)' : 'rgba(255, 153, 102, 0.75)';
-      ctx.beginPath();
-      ctx.ellipse(0, 0, semiMajPx, Math.max(2.5, semiMinPx), 0, 0, Math.PI * 2);
-      ctx.stroke();
-    } else {
-      const r = Math.min(36, Math.max(4.5, semiMajPx * 0.75));
-      ctx.translate(x, y);
-      if (type === 'GCl' || type === 'GC') {
-        // Globular cluster: circle with cross
-        ctx.strokeStyle = nightVision ? '#ff6040' : '#ffdd66';
-        ctx.beginPath();
-        ctx.arc(0, 0, r, 0, Math.PI * 2);
-        ctx.moveTo(-r, 0); ctx.lineTo(r, 0);
-        ctx.moveTo(0, -r); ctx.lineTo(0, r);
-        ctx.stroke();
-      } else if (type === 'OCl' || type === 'OC' || type === 'Cl+N') {
-        // Open cluster: dashed circle
-        ctx.strokeStyle = nightVision ? '#ff6548' : '#88e2ff';
-        ctx.setLineDash([2.5, 2.5]);
-        ctx.beginPath();
-        ctx.arc(0, 0, r, 0, Math.PI * 2);
-        ctx.stroke();
-      } else if (type === 'PN') {
-        // Planetary nebula: circle with outer ticks
-        ctx.strokeStyle = nightVision ? '#ff5540' : '#66ffb8';
-        ctx.beginPath();
-        ctx.arc(0, 0, r * 0.7, 0, Math.PI * 2);
-        ctx.moveTo(-r * 1.2, 0); ctx.lineTo(-r * 0.7, 0);
-        ctx.moveTo(r * 0.7, 0); ctx.lineTo(r * 1.2, 0);
-        ctx.moveTo(0, -r * 1.2); ctx.lineTo(0, -r * 0.7);
-        ctx.moveTo(0, r * 0.7); ctx.lineTo(0, r * 1.2);
-        ctx.stroke();
-      } else {
-        // Diffuse / Emission / Reflection Nebula / SNR: rounded square
-        ctx.strokeStyle = nightVision ? '#ff4a38' : '#e085ff';
-        ctx.strokeRect(-r * 0.85, -r * 0.85, r * 1.7, r * 1.7);
-      }
+      this.screenTargets.push({
+        type: 'dso',
+        id: row[0],
+        messier: row[1],
+        name: FRENCH_DSO_NAMES[messier] || FRENCH_DSO_NAMES[id] || row[2] || row[1] || row[0],
+        x: p.x,
+        y: p.y,
+        hitRadius: Math.max(10, Math.min(54, semiMajPx + 4)),
+        priority: isMessier ? 28 : 16,
+        data: row
+      });
     }
     ctx.restore();
   }
 
   /**
-   * 6. Stars (871,136 ATHYG v3.2 sorted by magnitude in stars.bin)
+   * Astro2001 Cartographic DSO Symbols:
+   * - Diffuse / Emission / Reflection Nebulae & SNR: Luminous green contour (`#73da78`)
+   * - Open Clusters (`OCl`): Warm ochre-yellow dashed circle (`#e8c46c`)
+   * - Globular Clusters (`GCl`): Warm gold crossed circle (`#f2ca5c`)
+   * - Planetary Nebulae (`PN`): Emerald-teal circle with 4 external cardinal ticks (`#69e1af`)
+   * - Galaxies (`G`): Coral-salmon oriented ellipse (`#e47a60`)
+   */
+  _drawDsoSymbol(ctx, x, y, semiMajPx, semiMinPx, majVecX, majVecY, type, nightVision, id = '', messier = '') {
+    ctx.save();
+    ctx.lineWidth = 1.15;
+    let labelColor = nightVision ? '#ff7052' : '#9ee6b8';
+
+    if (type === 'G' || type === 'Gx') {
+      const aAngle = Math.atan2(majVecY, majVecX);
+      const rx = Math.min(52, Math.max(5, semiMajPx));
+      const ry = Math.min(36, Math.max(2.6, semiMinPx));
+      const col = nightVision ? 'rgba(255, 78, 54, 0.82)' : 'rgba(230, 124, 96, 0.85)';
+      labelColor = nightVision ? '#ff785a' : '#f09c84';
+      ctx.translate(x, y);
+      ctx.rotate(aAngle);
+      ctx.strokeStyle = col;
+      ctx.beginPath();
+      ctx.ellipse(0, 0, rx, ry, 0, 0, Math.PI * 2);
+      ctx.stroke();
+    } else if (type === 'GCl' || type === 'GC') {
+      const r = Math.min(22, Math.max(5.5, semiMajPx * 0.65));
+      const col = nightVision ? '#ff6442' : '#f2ca5c';
+      labelColor = nightVision ? '#ff7c5c' : '#f5d77f';
+      ctx.translate(x, y);
+      ctx.strokeStyle = col;
+      ctx.beginPath();
+      ctx.arc(0, 0, r, 0, Math.PI * 2);
+      ctx.moveTo(-r, 0); ctx.lineTo(r, 0);
+      ctx.moveTo(0, -r); ctx.lineTo(0, r);
+      ctx.stroke();
+    } else if (type === 'OCl' || type === 'OC') {
+      const r = Math.min(28, Math.max(5.5, semiMajPx * 0.68));
+      const col = nightVision ? '#ff6848' : '#e8c46c';
+      labelColor = nightVision ? '#ff8060' : '#f0d284';
+      ctx.translate(x, y);
+      ctx.strokeStyle = col;
+      ctx.setLineDash([2.8, 2.6]);
+      ctx.beginPath();
+      ctx.arc(0, 0, r, 0, Math.PI * 2);
+      ctx.stroke();
+    } else if (type === 'PN') {
+      const r = Math.min(18, Math.max(4.8, semiMajPx * 0.6));
+      const col = nightVision ? '#ff5840' : '#69e1af';
+      labelColor = nightVision ? '#ff7658' : '#85ecc0';
+      ctx.translate(x, y);
+      ctx.strokeStyle = col;
+      ctx.beginPath();
+      ctx.arc(0, 0, r * 0.68, 0, Math.PI * 2);
+      ctx.moveTo(-r * 1.18, 0); ctx.lineTo(-r * 0.68, 0);
+      ctx.moveTo(r * 0.68, 0); ctx.lineTo(r * 1.18, 0);
+      ctx.moveTo(0, -r * 1.18); ctx.lineTo(0, -r * 0.68);
+      ctx.moveTo(0, r * 0.68); ctx.lineTo(0, r * 1.18);
+      ctx.stroke();
+    } else {
+      // Diffuse / Emission / Reflection Nebula / HII / Cl+N / SNR:
+      // Astro2001 luminous green contour (organic isophote contour for large nebulae, crisp rounded contour for compact ones)
+      const r = Math.min(44, Math.max(5.5, semiMajPx * 0.72));
+      const col = nightVision ? '#ff523a' : '#73da78';
+      labelColor = nightVision ? '#ff7458' : '#88e88d';
+      ctx.translate(x, y);
+      ctx.strokeStyle = col;
+
+      if (r >= 11) {
+        // Organic deterministic 10-vertex isophote contour seeded by catalog ID (like Astro2001 nebula outlines)
+        const seedStr = messier || id || 'NEB';
+        let seed = 0;
+        for (let s = 0; s < seedStr.length; s++) {
+          seed = (seed * 31 + seedStr.charCodeAt(s)) & 0xffff;
+        }
+        const nPts = 12;
+        const rx = r;
+        const ry = Math.max(r * 0.58, Math.min(r, semiMinPx * 0.72));
+        const pts = [];
+        for (let k = 0; k < nPts; k++) {
+          const ang = (k / nPts) * Math.PI * 2;
+          const wave = 0.84 + 0.24 * Math.sin(ang * 2 + (seed % 7)) + 0.12 * Math.cos(ang * 3 + (seed % 13));
+          pts.push({
+            px: Math.cos(ang) * rx * wave,
+            py: Math.sin(ang) * ry * wave
+          });
+        }
+        ctx.beginPath();
+        for (let k = 0; k < nPts; k++) {
+          const p0 = pts[k];
+          const p1 = pts[(k + 1) % nPts];
+          const mx = (p0.px + p1.px) * 0.5;
+          const my = (p0.py + p1.py) * 0.5;
+          if (k === 0) {
+            ctx.moveTo(mx, my);
+          } else {
+            ctx.quadraticCurveTo(p0.px, p0.py, mx, my);
+          }
+        }
+        const first = pts[0];
+        const second = pts[1];
+        ctx.quadraticCurveTo(first.px, first.py, (first.px + second.px) * 0.5, (first.py + second.py) * 0.5);
+        ctx.closePath();
+        ctx.stroke();
+      } else {
+        const s = r * 0.82;
+        ctx.beginPath();
+        if (ctx.roundRect) {
+          ctx.roundRect(-s, -s, s * 2, s * 2, 2.2);
+        } else {
+          ctx.rect(-s, -s, s * 2, s * 2);
+        }
+        ctx.stroke();
+      }
+    }
+
+    ctx.restore();
+    return labelColor;
+  }
+
+  /**
+   * 5. Stars (871,136 ATHYG v3.2 sorted by magnitude in stars.bin)
+   *    Includes Astro2001-style delicate WDS horizontal side-ticks (—•—) and thin GCVS variable rings.
    */
   _renderStars(ctx, state, projectRaDec, nightVision) {
-    const starsView = state.catalogs.starsBin; // DataView over 871,136 * 8 bytes
+    const starsView = state.catalogs.starsBin;
     if (!starsView) return;
 
     const totalStars = Math.floor(starsView.byteLength / 8);
     const { viewport } = this;
     const fov = viewport.fov;
 
-    // Limiting magnitude adapts smoothly to zoom level and daylight
-    let limitMag = 5.6;
-    if (fov < 70) limitMag = 6.5;
-    if (fov < 40) limitMag = 7.6;
-    if (fov < 18) limitMag = 8.8;
-    if (fov < 7) limitMag = 9.9;
-    if (fov < 2.5) limitMag = 10.6;
-    if (fov < 1.0) limitMag = 11.05;
+    // Smooth continuous limiting magnitude formula (like Astro2001: m<=8.5 at FOV 19.9°)
+    let limitMag = Math.min(11.0, Math.max(5.3, 11.15 - 2.02 * Math.log10(Math.max(0.4, fov))));
 
     // Daylight suppression in terrestrial view
     if (viewport.viewMode === 'terrestrial' && state.toggles.atmosphere && state.sun) {
       if (state.sun.alt > 2) {
-        limitMag = -1.5; // Only extremely bright bodies during day
+        limitMag = -1.5;
       } else if (state.sun.alt > -6) {
         limitMag = Math.min(limitMag, 2.5 - state.sun.alt * 0.5);
       }
     }
+    this.lastLimitMag = limitMag;
 
     const limitMagI16 = Math.round(limitMag * 1000);
     const meta = state.catalogs.starMeta || {};
@@ -951,13 +1467,15 @@ export class SkyRenderer {
     const showDoubles = !!state.toggles.doubleStars;
     const showVariables = !!state.toggles.variableStars;
 
+    // Spatial deduplication grid for WDS/GCVS markers so open clusters stay clean
+    const markerCellSize = 24;
+    const occupiedMarkerCells = new Set();
+
     ctx.save();
-    ctx.font = '11px system-ui, -apple-system, sans-serif';
 
     for (let i = 0; i < totalStars; i++) {
       const offset = i * 8;
       const magI16 = starsView.getInt16(offset + 4, true);
-      // Since stars.bin is strictly sorted by magnitude ascending, we can break immediately!
       if (magI16 > limitMagI16) break;
 
       const raU16 = starsView.getUint16(offset, true);
@@ -975,74 +1493,102 @@ export class SkyRenderer {
       const mag = magI16 / 1000;
       const bv = bvI8 / 50;
 
-      // Apparent star radius & opacity
+      // Refined Uranometria / Astro2001 star disk sizing & luminance curve
       const magDiff = limitMag - mag;
-      const radius = Math.max(0.65, Math.min(6.2, 0.7 + Math.pow(Math.max(0, 6.5 - mag), 1.32) * 0.42));
-      const alpha = Math.max(0.18, Math.min(1.0, magDiff * 0.42));
+      const radius = Math.max(0.55, Math.min(5.2, 0.58 + Math.pow(Math.max(0, 6.2 - mag), 1.28) * 0.38));
+      const alpha = Math.max(0.16, Math.min(1.0, magDiff * 0.46));
       const color = bvToRgb(bv, nightVision);
 
-      // Draw star core
+      // Soft atmospheric glow around bright stars (mag < 3.4)
+      if (mag < 3.4) {
+        const haloR = radius * (mag < 1.5 ? 3.8 : 2.6);
+        const grad = ctx.createRadialGradient(p.x, p.y, radius * 0.35, p.x, p.y, haloR);
+        grad.addColorStop(0, nightVision ? 'rgba(255, 75, 55, 0.42)' : 'rgba(235, 244, 255, 0.36)');
+        grad.addColorStop(1, 'rgba(255, 255, 255, 0)');
+        ctx.globalAlpha = Math.min(1, alpha);
+        ctx.fillStyle = grad;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, haloR, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      // Crisp star core
       ctx.globalAlpha = alpha;
       ctx.fillStyle = color;
       ctx.beginPath();
       ctx.arc(p.x, p.y, radius, 0, Math.PI * 2);
       ctx.fill();
 
-      // Soft halo + diffraction spikes for very bright stars (mag < 2.2)
-      if (mag < 2.2) {
-        const haloR = radius * 3.2;
-        const grad = ctx.createRadialGradient(p.x, p.y, radius * 0.5, p.x, p.y, haloR);
-        grad.addColorStop(0, nightVision ? 'rgba(255, 80, 60, 0.48)' : 'rgba(255, 250, 240, 0.45)');
-        grad.addColorStop(1, 'rgba(255, 255, 255, 0)');
-        ctx.fillStyle = grad;
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, haloR, 0, Math.PI * 2);
-        ctx.fill();
+      // Reserve obstacle box for bright stars so no label is drawn right on top of a bright star disk
+      if (mag < 3.8) {
+        this._reserveObstacle(p.x, p.y, radius + 2.5);
+      }
 
-        if (mag < 1.2) {
-          const spikeLen = radius * 4.2;
-          ctx.strokeStyle = color;
-          ctx.lineWidth = 0.75;
-          ctx.beginPath();
-          ctx.moveTo(p.x - spikeLen, p.y); ctx.lineTo(p.x + spikeLen, p.y);
-          ctx.moveTo(p.x, p.y - spikeLen); ctx.lineTo(p.x, p.y + spikeLen);
-          ctx.stroke();
+      // Subtle WDS Double Star & GCVS Variable Star cartographic markers (Astro2001 style)
+      if ((showDoubles && wdsMap[i]) || (showVariables && gcvsMap[i])) {
+        const markerMagThreshold = fov < 15 ? 7.8 : fov < 35 ? 6.2 : 4.8;
+        if (mag <= markerMagThreshold) {
+          const mCell = `${Math.floor(p.x / markerCellSize)},${Math.floor(p.y / markerCellSize)}`;
+          if (!occupiedMarkerCells.has(mCell)) {
+            occupiedMarkerCells.add(mCell);
+
+            // WDS Double Star: delicate horizontal side-ticks (—•—) without any cluttering circle
+            if (showDoubles && wdsMap[i]) {
+              const inner = radius + 1.4;
+              const tickLen = 2.8;
+              ctx.globalAlpha = 0.78;
+              ctx.strokeStyle = nightVision ? 'rgba(255, 95, 70, 0.78)' : 'rgba(165, 205, 255, 0.75)';
+              ctx.lineWidth = 0.9;
+              ctx.beginPath();
+              ctx.moveTo(p.x - inner - tickLen, p.y);
+              ctx.lineTo(p.x - inner, p.y);
+              ctx.moveTo(p.x + inner, p.y);
+              ctx.lineTo(p.x + inner + tickLen, p.y);
+              ctx.stroke();
+            }
+
+            // GCVS Variable Star: delicate thin concentric lavender ring
+            if (showVariables && gcvsMap[i]) {
+              const rVar = Math.max(3.6, radius + 2.4);
+              ctx.globalAlpha = 0.72;
+              ctx.strokeStyle = nightVision ? 'rgba(255, 85, 60, 0.72)' : 'rgba(214, 165, 238, 0.70)';
+              ctx.lineWidth = 0.85;
+              ctx.beginPath();
+              ctx.arc(p.x, p.y, rVar, 0, Math.PI * 2);
+              ctx.stroke();
+            }
+          }
         }
       }
 
-      // WDS Double Star indicator (3,309 pairs attached to catalog star)
-      if (showDoubles && wdsMap[i] && (mag < 5.5 || fov < 35)) {
-        const rDbl = Math.max(4.5, radius + 2.5);
-        ctx.strokeStyle = nightVision ? '#ff6644' : '#58d5ff';
-        ctx.lineWidth = 1;
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, rDbl, 0, Math.PI * 2);
-        ctx.moveTo(p.x - rDbl - 2.5, p.y);
-        ctx.lineTo(p.x + rDbl + 2.5, p.y);
-        ctx.stroke();
-      }
-
-      // GCVS Variable Star indicator (882 variables attached to catalog star)
-      if (showVariables && gcvsMap[i] && (mag < 5.8 || fov < 35)) {
-        const rVar = Math.max(5.5, radius + 3.5);
-        ctx.strokeStyle = nightVision ? '#ff5533' : '#ff92c2';
-        ctx.lineWidth = 1;
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, rVar, -0.8, 0.8);
-        ctx.stroke();
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, rVar, Math.PI - 0.8, Math.PI + 0.8);
-        ctx.stroke();
-      }
-
-      // Proper Name label (among the 3,428 named stars)
+      // Queue concise Star Name / Bayer designation label for collision-free placement
       const nameEntry = namesMap[i];
       if (nameEntry) {
-        const properName = Array.isArray(nameEntry) ? nameEntry[0] : (nameEntry.name || nameEntry);
-        if (mag < 2.1 || (mag < 3.6 && fov < 65) || (mag < 5.0 && fov < 25) || fov < 6) {
-          ctx.globalAlpha = 0.88;
-          ctx.fillStyle = nightVision ? '#ff7a60' : '#dce8ff';
-          ctx.fillText(properName, p.x + radius + 4, p.y + 3);
+        const canShowStarLabel =
+          mag < 2.2 ||
+          (mag < 3.5 && fov < 68) ||
+          (mag < 4.5 && fov < 30) ||
+          (mag < 5.4 && fov < 14) ||
+          fov < 5.5;
+
+        if (canShowStarLabel) {
+          const conciseLabel = formatConciseStarLabel(nameEntry, fov);
+          if (conciseLabel) {
+            const isProperName = !(/^[α-ωΑ-Ω0-9]/.test(conciseLabel));
+            this._queueLabel({
+              text: conciseLabel,
+              x: p.x,
+              y: p.y,
+              offsetPx: radius + 4.5,
+              priority: (isProperName ? 64 : 44) - mag * 5,
+              font: mag < 2.3
+                ? '600 11.5px "IBM Plex Sans", system-ui, -apple-system, sans-serif'
+                : '400 10.5px "IBM Plex Sans", system-ui, -apple-system, sans-serif',
+              color: nightVision ? '#ff8064' : (mag < 2.3 ? '#f0f5ff' : 'rgba(214, 226, 248, 0.90)'),
+              alpha: mag < 2.5 ? 0.95 : 0.86,
+              heightPx: 11
+            });
+          }
         }
       }
 
@@ -1069,11 +1615,10 @@ export class SkyRenderer {
   }
 
   /**
-   * 7. Meteor Showers (13 showers: radiant markers + shooting star animation)
+   * 7. Meteor Showers (13 showers: radiant markers + collision-free labels)
    */
   _renderMeteorShowers(ctx, state, projectRaDec, nightVision) {
     ctx.save();
-    ctx.font = '600 10px system-ui, -apple-system, sans-serif';
 
     for (const m of state.activeMeteors) {
       const p = projectRaDec(m.ra, m.dec);
@@ -1081,23 +1626,31 @@ export class SkyRenderer {
       if (this.viewport.viewMode === 'terrestrial' && state.toggles.ground && p.alt < 0) continue;
 
       const isActive = m.currentZHR >= 1.5;
-      const r = isActive ? 8 : 5.5;
-      const col = nightVision ? '#ff5538' : (isActive ? '#70ffe0' : 'rgba(130, 215, 210, 0.55)');
+      const r = isActive ? 7.5 : 5;
+      const col = nightVision ? '#ff5538' : (isActive ? '#70ffe0' : 'rgba(130, 215, 210, 0.62)');
 
       ctx.strokeStyle = col;
-      ctx.lineWidth = isActive ? 1.4 : 1;
-      // Radiant starburst symbol
+      ctx.lineWidth = isActive ? 1.25 : 0.95;
       ctx.beginPath();
       for (let k = 0; k < 8; k++) {
         const ang = (k * Math.PI) / 4;
-        ctx.moveTo(p.x + Math.cos(ang) * 2.5, p.y + Math.sin(ang) * 2.5);
+        ctx.moveTo(p.x + Math.cos(ang) * 2.2, p.y + Math.sin(ang) * 2.2);
         ctx.lineTo(p.x + Math.cos(ang) * r, p.y + Math.sin(ang) * r);
       }
       ctx.stroke();
 
-      ctx.fillStyle = col;
       const label = isActive ? `${m.name} (${Math.round(m.currentZHR)}/h)` : m.name;
-      ctx.fillText(label, p.x + r + 4, p.y + 3);
+      this._queueLabel({
+        text: label,
+        x: p.x,
+        y: p.y,
+        offsetPx: r + 4,
+        priority: isActive ? 58 : 26,
+        font: '500 10px "IBM Plex Sans", system-ui, -apple-system, sans-serif',
+        color: col,
+        alpha: 0.9,
+        heightPx: 10
+      });
 
       this.screenTargets.push({
         type: 'meteor',
@@ -1118,7 +1671,6 @@ export class SkyRenderer {
    */
   _renderAsteroids(ctx, state, projectRaDec, nightVision) {
     ctx.save();
-    ctx.font = '10px system-ui, -apple-system, sans-serif';
 
     for (const ast of state.asteroids) {
       const p = projectRaDec(ast.ra, ast.dec);
@@ -1127,11 +1679,9 @@ export class SkyRenderer {
 
       const col = nightVision ? '#ff6a45' : '#e2c590';
       ctx.strokeStyle = col;
-      ctx.fillStyle = col;
-      ctx.lineWidth = 1.2;
+      ctx.lineWidth = 1.15;
 
-      // Diamond symbol for asteroids
-      const r = 4.2;
+      const r = 4.0;
       ctx.beginPath();
       ctx.moveTo(p.x, p.y - r);
       ctx.lineTo(p.x + r, p.y);
@@ -1140,7 +1690,17 @@ export class SkyRenderer {
       ctx.closePath();
       ctx.stroke();
 
-      ctx.fillText(ast.name, p.x + 7, p.y + 3);
+      this._queueLabel({
+        text: ast.name,
+        x: p.x,
+        y: p.y,
+        offsetPx: 6.5,
+        priority: 62,
+        font: '500 10.5px "IBM Plex Sans", system-ui, -apple-system, sans-serif',
+        color: col,
+        alpha: 0.92,
+        heightPx: 11
+      });
 
       this.screenTargets.push({
         type: 'asteroid',
@@ -1170,7 +1730,6 @@ export class SkyRenderer {
       if (!p.visible) continue;
       if (viewport.viewMode === 'terrestrial' && state.toggles.ground && p.alt < -2) continue;
 
-      // True angular radius in pixels:
       const trueRadiusPx = ((body.angDiamArcsec || 20) / 3600) * degToPx * 0.5;
       let drawRadiusPx = trueRadiusPx;
 
@@ -1194,12 +1753,12 @@ export class SkyRenderer {
         nightVision
       });
 
+      this._reserveObstacle(p.x, p.y, drawRadiusPx + 4);
+
       // Render Galilean moons of Jupiter and main moons of Saturn when zoomed in (< 4° FOV)
       if ((body.id === 'Jupiter' || body.id === 'Saturn') && body.moons && viewport.fov < 4.5) {
         ctx.save();
-        ctx.font = '9.5px system-ui, -apple-system, sans-serif';
         for (const moon of body.moons) {
-          // Offset in planetary equatorial radii
           const mx = p.x + moon.dx * drawRadiusPx;
           const my = p.y - moon.dy * drawRadiusPx;
           if (moon.occulted || moon.eclipsed) continue;
@@ -1210,7 +1769,16 @@ export class SkyRenderer {
           ctx.fill();
 
           if (viewport.fov < 1.5) {
-            ctx.fillText(moon.name, mx + 4, my + 3);
+            this._queueLabel({
+              text: moon.name,
+              x: mx,
+              y: my,
+              offsetPx: 4.5,
+              priority: 72,
+              font: '500 9.5px "IBM Plex Sans", system-ui, sans-serif',
+              color: nightVision ? '#ff6a50' : '#ffe9b8',
+              heightPx: 10
+            });
           }
 
           this.screenTargets.push({
@@ -1228,13 +1796,18 @@ export class SkyRenderer {
         ctx.restore();
       }
 
-      // Label
-      ctx.save();
-      ctx.font = '600 11.5px system-ui, -apple-system, sans-serif';
-      ctx.fillStyle = nightVision ? '#ff8568' : '#fff2c8';
       const labelOffset = (body.id === 'Saturn' ? drawRadiusPx * 1.9 : drawRadiusPx) + 5;
-      ctx.fillText(body.localizedName || body.name || body.id, p.x + labelOffset, p.y + 4);
-      ctx.restore();
+      this._queueLabel({
+        text: body.localizedName || body.name || body.id,
+        x: p.x,
+        y: p.y,
+        offsetPx: labelOffset,
+        priority: 95,
+        font: '600 11.5px "IBM Plex Sans", system-ui, -apple-system, sans-serif',
+        color: nightVision ? '#ff8568' : '#fff2c8',
+        alpha: 0.98,
+        heightPx: 12
+      });
 
       this.screenTargets.push({
         type: 'planet',
@@ -1255,7 +1828,6 @@ export class SkyRenderer {
   _renderSatellites(ctx, state, projectRaDec, nightVision) {
     const { viewport } = this;
     ctx.save();
-    ctx.font = '10px system-ui, -apple-system, sans-serif';
 
     for (const sat of state.satellites) {
       if (!sat.visibleAboveHorizon && viewport.viewMode === 'terrestrial' && state.toggles.ground) {
@@ -1278,10 +1850,9 @@ export class SkyRenderer {
 
       ctx.strokeStyle = col;
       ctx.fillStyle = col;
-      ctx.lineWidth = isISS ? 1.6 : 1.1;
+      ctx.lineWidth = isISS ? 1.5 : 1.0;
 
       if (isISS) {
-        // Distinct ISS solar-panel H-icon
         ctx.strokeRect(p.x - 6, p.y - 4, 3.5, 8);
         ctx.strokeRect(p.x + 2.5, p.y - 4, 3.5, 8);
         ctx.beginPath();
@@ -1290,12 +1861,22 @@ export class SkyRenderer {
         ctx.stroke();
       } else {
         ctx.beginPath();
-        ctx.arc(p.x, p.y, 2.5, 0, Math.PI * 2);
+        ctx.arc(p.x, p.y, 2.2, 0, Math.PI * 2);
         ctx.fill();
       }
 
-      if (isISS || sat.mag < 3.5 || viewport.fov < 45) {
-        ctx.fillText(sat.name, p.x + 8, p.y + 3);
+      if (isISS || sat.mag < 3.5 || viewport.fov < 40) {
+        this._queueLabel({
+          text: sat.name,
+          x: p.x,
+          y: p.y,
+          offsetPx: isISS ? 8.5 : 5.5,
+          priority: isISS ? 85 : 30,
+          font: isISS ? '600 10.5px "IBM Plex Sans", system-ui, sans-serif' : '400 10px "IBM Plex Sans", system-ui, sans-serif',
+          color: col,
+          alpha: 0.9,
+          heightPx: 10
+        });
       }
 
       this.screenTargets.push({

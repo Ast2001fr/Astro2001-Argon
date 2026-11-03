@@ -1126,8 +1126,11 @@ export class PanelsUI {
         <div class="location-manual-col">
           <h4>${t('location.manualCoords', 'Coordonnées manuelles & Altitude')}</h4>
           <div class="form-group">
-            <label>${t('location.name', 'Nom du lieu')}</label>
-            <input type="text" id="loc-name-input" class="text-input" value="${obs.name}">
+            <label>${t('location.name', 'Nom du lieu / Adresse résolue')}</label>
+            <div style="display:flex; gap:6px;">
+              <input type="text" id="loc-name-input" class="text-input" value="${obs.name}">
+              <button type="button" class="btn-secondary" id="btn-resolve-coords" title="Résoudre l'adresse et l'altitude à partir des coordonnées GPS ci-dessous" style="white-space:nowrap;">Résoudre</button>
+            </div>
           </div>
           <div class="form-row-2">
             <div class="form-group">
@@ -1202,25 +1205,87 @@ export class PanelsUI {
       updateCityList(e.target.value);
     });
 
-    this.modalBody.querySelector('#btn-use-gps')?.addEventListener('click', () => {
+    this.modalBody.querySelector('#btn-use-gps')?.addEventListener('click', (e) => {
       if (!navigator.geolocation) return;
-      navigator.geolocation.getCurrentPosition((pos) => {
-        const lat = Number(pos.coords.latitude.toFixed(4));
-        const lon = Number(pos.coords.longitude.toFixed(4));
-        const alt = Math.round(pos.coords.altitude || 50);
-        const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
-        this.app.setObserverLocation({ name: 'Position GPS', country: '', lat, lon, alt, tz });
-        this.renderLocationPanel();
-      });
+      const btn = e.currentTarget;
+      const origText = btn.textContent;
+      btn.textContent = 'GPS…';
+      btn.disabled = true;
+
+      navigator.geolocation.getCurrentPosition(
+        async (pos) => {
+          const lat = Number(pos.coords.latitude.toFixed(4));
+          const lon = Number(pos.coords.longitude.toFixed(4));
+          const sensorAlt = Number.isFinite(pos.coords.altitude) ? Math.round(pos.coords.altitude) : null;
+          // Immediate update with nearest embedded city while online reverse geocoding completes
+          const nearest = this.app.findNearestEmbeddedCity(lat, lon);
+          const fallbackName = nearest
+            ? (nearest.distKm <= 3.5 ? nearest.name : `Près de ${nearest.name}`)
+            : 'Position GPS';
+          const initialTz = nearest?.tz || Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+          this.app.setObserverLocation({
+            name: fallbackName,
+            country: nearest?.country || '',
+            lat,
+            lon,
+            alt: sensorAlt ?? nearest?.alt ?? 50,
+            tz: initialTz
+          });
+          this.renderLocationPanel();
+
+          // Resolve exact street/locality address & terrain elevation from GPS coordinates
+          const resolved = await this.app.resolveLocationFromCoords(lat, lon, sensorAlt);
+          if (resolved) {
+            this.app.setObserverLocation(resolved);
+            if (this.currentPanel === 'location') {
+              this.renderLocationPanel();
+            }
+          }
+        },
+        () => {
+          btn.textContent = origText;
+          btn.disabled = false;
+        },
+        { enableHighAccuracy: true, timeout: 8000 }
+      );
     });
 
-    this.modalBody.querySelector('#btn-apply-location')?.addEventListener('click', () => {
-      const name = this.modalBody.querySelector('#loc-name-input').value || 'Lieu personnalisé';
+    this.modalBody.querySelector('#btn-resolve-coords')?.addEventListener('click', async (e) => {
+      const btn = e.currentTarget;
+      const lat = parseFloat(this.modalBody.querySelector('#loc-lat-input')?.value) || 0;
+      const lon = parseFloat(this.modalBody.querySelector('#loc-lon-input')?.value) || 0;
+      btn.textContent = '…';
+      btn.disabled = true;
+      const resolved = await this.app.resolveLocationFromCoords(lat, lon, null);
+      if (resolved) {
+        this.app.setObserverLocation(resolved);
+        this.renderLocationPanel();
+      } else {
+        btn.textContent = 'Résoudre';
+        btn.disabled = false;
+      }
+    });
+
+    this.modalBody.querySelector('#btn-apply-location')?.addEventListener('click', async () => {
+      let name = (this.modalBody.querySelector('#loc-name-input').value || '').trim();
       const lat = parseFloat(this.modalBody.querySelector('#loc-lat-input').value) || 0;
       const lon = parseFloat(this.modalBody.querySelector('#loc-lon-input').value) || 0;
-      const alt = parseFloat(this.modalBody.querySelector('#loc-alt-input').value) || 0;
-      const tz = this.modalBody.querySelector('#loc-tz-input').value || 'UTC';
-      this.app.setObserverLocation({ name, country: '', lat, lon, alt, tz });
+      let alt = parseFloat(this.modalBody.querySelector('#loc-alt-input').value);
+      let tz = this.modalBody.querySelector('#loc-tz-input').value || 'UTC';
+
+      const prevObs = this.app.state.observer;
+      const coordsChanged = Math.abs(lat - prevObs.lat) > 0.002 || Math.abs(lon - prevObs.lon) > 0.002;
+      const shouldResolve = !name || name === 'Position GPS' || name === 'Lieu personnalisé' || (coordsChanged && name === prevObs.name);
+
+      if (shouldResolve) {
+        const resolved = await this.app.resolveLocationFromCoords(lat, lon, Number.isFinite(alt) ? alt : null);
+        if (resolved) {
+          this.app.setObserverLocation(resolved);
+          this.renderLocationPanel();
+          return;
+        }
+      }
+      this.app.setObserverLocation({ name: name || 'Lieu personnalisé', country: '', lat, lon, alt: alt || 0, tz });
     });
   }
 
