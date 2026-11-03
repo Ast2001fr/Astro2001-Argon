@@ -798,7 +798,7 @@ export class PanelsUI {
   }
 
   /* ==========================================================================
-   * 4. PANNEAU « ISS ET 177 SATELLITES » (Passages sur 4 jours + Celestrak)
+   * 4. PANNEAU « ISS ET 177 SATELLITES » (Passages sur 4 jours — TLE locaux)
    * ========================================================================== */
   renderSatellitesPanel() {
     const t = (k, fb) => this.t(k, fb);
@@ -827,13 +827,24 @@ export class PanelsUI {
             `).join('')}
           </select>
         </div>
-        <button class="btn-secondary" id="btn-refresh-tle">
-          ↻ ${t('satellites.updateCelestrak', 'Celestrak TLE')}
+        <button class="btn-secondary" id="btn-toggle-tle-import" title="Importer manuellement des éléments TLE (3LE/2LE) sans appel externe">
+          ${t('satellites.importLocalTle', 'Importer TLE')}
         </button>
       </div>
 
+      <div id="tle-import-box" style="display: none; margin-bottom: 10px; padding: 10px; border-radius: 8px; background: rgba(15, 23, 42, 0.65); border: 1px solid var(--border-subtle);">
+        <div class="muted" style="font-size: 11.5px; margin-bottom: 6px;">
+          Collez ci-dessous vos lignes TLE (format 2 ou 3 lignes NORAD) pour mettre à jour localement les satellites sans aucun appel externe :
+        </div>
+        <textarea id="tle-paste-input" class="text-input mono" rows="4" style="width: 100%; font-size: 11px; margin-bottom: 6px;" placeholder="ISS (ZARYA)&#10;1 25544U 98067A   ...&#10;2 25544  51.6416 ..."></textarea>
+        <div style="display: flex; gap: 8px; justify-content: flex-end;">
+          <button class="btn-xs" id="btn-reset-local-tle">Réinitialiser catalogue embarqué (177)</button>
+          <button class="btn-xs primary" id="btn-apply-tle-paste">Appliquer TLE</button>
+        </div>
+      </div>
+
       <div id="tle-status-msg" class="muted" style="margin-bottom: 8px; font-size: 12px;">
-        ${sats.length} ${t('satellites.loadedCount', 'satellites brillants chargés en SGP4')} · ${currentSat ? currentSat.name : ''}
+        ${sats.length} ${t('satellites.loadedCount', 'satellites brillants propagés en SGP4 local (aucun appel externe)')} · ${currentSat ? currentSat.name : ''}
       </div>
 
       <div class="table-scroll" style="max-height: 410px;">
@@ -899,15 +910,27 @@ export class PanelsUI {
       this.renderSatellitesPanel();
     });
 
-    this.modalBody.querySelector('#btn-refresh-tle')?.addEventListener('click', async () => {
-      const msgEl = this.modalBody.querySelector('#tle-status-msg');
-      if (msgEl) msgEl.textContent = t('satellites.updating', 'Connexion à Celestrak en cours…');
-      const updated = await this.app.refreshSatellitesFromCelestrak();
-      if (msgEl) {
-        msgEl.textContent = updated
-          ? t('satellites.updateSuccess', 'TLE actualisés avec succès depuis Celestrak !')
-          : t('satellites.updateFallback', 'Hors ligne ou Celestrak indisponible — utilisation des 177 TLE embarqués.');
+    this.modalBody.querySelector('#btn-toggle-tle-import')?.addEventListener('click', () => {
+      const box = this.modalBody.querySelector('#tle-import-box');
+      if (box) {
+        box.style.display = box.style.display === 'none' ? 'block' : 'none';
       }
+    });
+
+    this.modalBody.querySelector('#btn-apply-tle-paste')?.addEventListener('click', () => {
+      const raw = this.modalBody.querySelector('#tle-paste-input')?.value || '';
+      const count = this.app.importCustomTLEText(raw);
+      const msgEl = this.modalBody.querySelector('#tle-status-msg');
+      if (count > 0) {
+        this.renderSatellitesPanel();
+      } else if (msgEl) {
+        msgEl.textContent = 'Format TLE non reconnu (attendu : lignes commençant par "1 " et "2 ").';
+      }
+    });
+
+    this.modalBody.querySelector('#btn-reset-local-tle')?.addEventListener('click', async () => {
+      await this.app.refreshSatellitesFromCelestrak();
+      this.renderSatellitesPanel();
     });
 
     this.modalBody.querySelectorAll('[data-plot-pass]').forEach(btn => {

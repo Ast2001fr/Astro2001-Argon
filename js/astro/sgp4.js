@@ -885,28 +885,22 @@ export function parseTLEText(rawText) {
 }
 
 /**
- * Fetch live TLEs from CelesTrak (defaulting to bright stations / visual satellites)
- * and return parsed satellite records. Falls back to `DEFAULT_SATELLITES` if offline.
- * @param {string} [group='stations'] - CelesTrak group name ('stations', 'visual', 'active') or full URL
+ * Reload TLEs strictly from the local embedded catalog (`./data/satellites-tle.json`)
+ * without making any external request to CelesTrak (whose Terms of Service / license are restrictive).
  * @returns {Promise<Array<object>>}
  */
-export async function fetchCelestrakTLEs(group = 'stations') {
-  const url = group.startsWith('http')
-    ? group
-    : `https://celestrak.org/NORAD/elements/gp.php?GROUP=${encodeURIComponent(group)}&FORMAT=tle`;
-
+export async function fetchCelestrakTLEs() {
   try {
-    const response = await fetch(url, { mode: 'cors', cache: 'no-store' });
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}`);
-    }
-    const text = await response.text();
-    const parsed = parseTLEText(text);
-    if (parsed.length > 0) {
-      return parsed;
+    const response = await fetch('./data/satellites-tle.json', { cache: 'no-cache' });
+    if (response.ok) {
+      const list = await response.json();
+      if (Array.isArray(list) && list.length > 0) {
+        return list;
+      }
     }
   } catch {
-    // Fallback to built-in catalog when offline or blocked
+    // Fallback to built-in catalog
   }
   return DEFAULT_SATELLITES.map((s) => parseTLE(s));
 }
+

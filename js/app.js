@@ -1819,24 +1819,53 @@ export class PlanetariumApp {
   }
 
   async refreshSatellitesFromCelestrak() {
-    if (!navigator.onLine) return false;
     try {
-      const fresh = await fetchCelestrakTLEs('visual');
-      if (fresh && fresh.length > 0) {
-        // Merge updated TLEs while keeping 177 total bright satellites
-        const map = new Map(this.state.catalogs.satellitesTle.map(s => [s.norad, s]));
-        for (const f of fresh) {
-          if (f.norad && map.has(f.norad)) {
-            map.set(f.norad, { ...map.get(f.norad), line1: f.line1, line2: f.line2 });
-          }
+      const res = await fetch('./data/satellites-tle.json', { cache: 'no-cache' });
+      if (res.ok) {
+        const localTles = await res.json();
+        if (Array.isArray(localTles) && localTles.length > 0) {
+          this.state.catalogs.satellitesTle = localTles;
+          this._updateEphemerides(true);
+          this.requestRender();
+          return true;
         }
-        this.state.catalogs.satellitesTle = Array.from(map.values());
-        this._updateEphemerides(true);
-        this.requestRender();
-        return true;
       }
     } catch (_) {}
     return false;
+  }
+
+  importCustomTLEText(rawText) {
+    if (!rawText || typeof rawText !== 'string') return 0;
+    const lines = rawText
+      .split(/\r?\n/)
+      .map(l => l.trim())
+      .filter(Boolean);
+    const map = new Map((this.state.catalogs.satellitesTle || []).map(s => [Number(s.norad), s]));
+    let count = 0;
+
+    for (let i = 0; i < lines.length; i++) {
+      if (lines[i].startsWith('1 ') && i + 1 < lines.length && lines[i + 1].startsWith('2 ')) {
+        const line1 = lines[i];
+        const line2 = lines[i + 1];
+        const norad = parseInt(line1.slice(2, 7).trim(), 10);
+        const name = (i > 0 && !lines[i - 1].startsWith('1 ') && !lines[i - 1].startsWith('2 '))
+          ? lines[i - 1]
+          : (map.get(norad)?.name || `SAT #${norad}`);
+        if (!Number.isNaN(norad)) {
+          const existing = map.get(norad) || { name, norad, stdMag: 4.5, category: 'custom' };
+          map.set(norad, { ...existing, name, norad, line1, line2 });
+          count++;
+        }
+        i += 1;
+      }
+    }
+
+    if (count > 0) {
+      this.state.catalogs.satellitesTle = Array.from(map.values());
+      this._updateEphemerides(true);
+      this.requestRender();
+    }
+    return count;
   }
 
   computeEventsForYear(year) {
