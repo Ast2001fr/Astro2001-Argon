@@ -19,7 +19,7 @@ import {
   getShortcutMap,
   normalizeShortcutKey,
   getDefaultToggleState
-} from './features.js?v=9';
+} from './features.js?v=10';
 
 import {
   initI18n,
@@ -28,7 +28,7 @@ import {
   t,
   getConstellationName,
   applyDomTranslations
-} from './i18n.js?v=9';
+} from './i18n.js?v=10';
 
 import {
   dateToJD,
@@ -43,7 +43,7 @@ import {
   bvToTemperatureK,
   computeStellarRadiusSolar,
   formatAltitudeWithFists
-} from './astro/time.js?v=9';
+} from './astro/time.js?v=10';
 
 import {
   computeSolarSystem,
@@ -51,14 +51,14 @@ import {
   getPlanetMoons,
   computeAsteroids,
   DEFAULT_ASTEROIDS
-} from './astro/solar-system.js?v=9';
+} from './astro/solar-system.js?v=10';
 
 import {
   computeAllSatellites,
   predictSatellitePasses,
   fetchCelestrakTLEs,
   DEFAULT_SATELLITES
-} from './astro/sgp4.js?v=9';
+} from './astro/sgp4.js?v=10';
 
 import {
   computeRiseTransitSet,
@@ -66,13 +66,13 @@ import {
   computeMeteorShowers,
   computeEventsCalendar,
   DEFAULT_METEOR_SHOWERS
-} from './astro/events.js?v=9';
+} from './astro/events.js?v=10';
 
-import { SkyViewport } from './render/projection.js?v=9';
-import { SkyRenderer } from './render/sky-renderer.js?v=9';
-import { ObjectCardUI } from './ui/object-card.js?v=9';
-import { PanelsUI } from './ui/panels.js?v=9';
-import { CommandPaletteUI } from './ui/command-palette.js?v=9';
+import { SkyViewport } from './render/projection.js?v=10';
+import { SkyRenderer, LUNAR_FEATURES } from './render/sky-renderer.js?v=10';
+import { ObjectCardUI } from './ui/object-card.js?v=10';
+import { PanelsUI } from './ui/panels.js?v=10';
+import { CommandPaletteUI } from './ui/command-palette.js?v=10';
 
 const COMPASS_DIRS = ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 'S', 'SSO', 'SO', 'OSO', 'O', 'ONO', 'NO', 'NNO'];
 
@@ -410,7 +410,8 @@ export class PlanetariumApp {
         angDiamArcsec: b.angDiamArcsec ?? b.angularDiameterArcsec ?? 20,
         phaseAngleDeg: b.phaseAngleDeg ?? b.phaseAngle ?? 0,
         paLimbDeg: b.paLimbDeg ?? b.brightLimbPA ?? 270,
-        cML: b.cML ?? b.centralMeridian ?? ((jd * 850) % 360),
+        cML: b.cML ?? b.rotation?.cML ?? b.centralMeridian ?? (id === 'Moon' ? -(b.librationLonDeg || 0) : ((jd * 850) % 360)),
+        subEarthLatDeg: b.subEarthLatDeg ?? b.rotation?.subEarthLatDeg ?? b.librationLatDeg ?? 0,
         ringTiltDeg: b.ringTiltDeg ?? (b.rings ? b.rings.B : 14),
         orbitPoints: this.state.planetOrbitCache.get(id) || null,
         moons
@@ -1229,14 +1230,28 @@ export class PlanetariumApp {
 
     if (obj.type === 'planet') {
       const b = obj.data || {};
-      typeLabel = obj.id === 'Sun' ? 'Étoile (Soleil)' : obj.id === 'Moon' ? 'Satellite naturel' : 'Planète';
-      title = b.localizedName || obj.name;
-      subtitle = `Système solaire · ${conName}`;
+      const lf = obj.lunarFeature || null;
+      typeLabel = lf
+        ? (lf.type === 'crater' ? 'Cratère lunaire' : lf.type === 'mons' ? 'Massif lunaire' : lf.type === 'site' ? 'Site d\'alunissage' : 'Mer lunaire (Mare)')
+        : (obj.id === 'Sun' ? 'Étoile (Soleil)' : obj.id === 'Moon' ? 'Satellite naturel' : 'Planète');
+      title = lf ? lf.name : (b.localizedName || obj.name);
+      const latS = lf ? `${Math.abs(lf.lat).toFixed(1)}° ${lf.lat >= 0 ? 'N' : 'S'}` : '';
+      const lonS = lf ? `${Math.abs(lf.lon).toFixed(1)}° ${lf.lon >= 0 ? 'E' : 'W'}` : '';
+      subtitle = lf
+        ? `${lf.latin} · Séléno. ${latS}, ${lonS} · Lune`
+        : `Système solaire · ${conName}`;
       wikiKey = obj.id;
       moons = b.moons || null;
       majArcmin = (b.angDiamArcsec || 20) / 60;
       minArcmin = majArcmin;
 
+      if (lf) {
+        physicalRows.push({ label: 'Coordonnées sélénographiques', value: `${latS} · ${lonS}` });
+        if (lf.diamKm > 0) {
+          physicalRows.push({ label: 'Diamètre / étendue', value: `${lf.diamKm.toLocaleString()} km` });
+        }
+        identityRows.push({ label: 'Nomenclature UAI', value: lf.latin });
+      }
       if (b.distAU !== undefined) {
         physicalRows.push({ label: 'Distance', value: obj.id === 'Moon' ? `${Math.round(b.distKm || b.distAU * 149597870).toLocaleString()} km` : `${b.distAU.toFixed(3)} UA` });
       }
@@ -1245,6 +1260,9 @@ export class PlanetariumApp {
       }
       if (b.illum !== undefined && obj.id !== 'Sun') {
         physicalRows.push({ label: 'Phase éclairée', value: `${(b.illum * 100).toFixed(1)} % (angle ${Math.round(b.phaseAngleDeg || 0)}°)` });
+      }
+      if (obj.id === 'Moon' && (b.librationLonDeg !== undefined || b.librationLatDeg !== undefined)) {
+        physicalRows.push({ label: 'Libration optique (L, B)', value: `${(b.librationLonDeg || 0).toFixed(1)}° · ${(b.librationLatDeg || 0).toFixed(1)}°` });
       }
       if (b.elongDeg !== undefined && obj.id !== 'Sun') {
         physicalRows.push({ label: 'Élongation solaire', value: `${b.elongDeg.toFixed(1)}°` });
@@ -2110,6 +2128,34 @@ export class PlanetariumApp {
           badge: 'Planète / Astre',
           actionFn: () => this.findAndCenterObjectById(b.id)
         });
+      }
+    }
+
+    // 1b. Lunar Selenographic Structures (Maria, Craters, Mountains, Apollo 11)
+    if (q && Array.isArray(LUNAR_FEATURES)) {
+      for (const lf of LUNAR_FEATURES) {
+        if (lf.name.toLowerCase().includes(q) || (lf.latin || '').toLowerCase().includes(q)) {
+          const latS = `${Math.abs(lf.lat).toFixed(1)}°${lf.lat >= 0 ? 'N' : 'S'}`;
+          const lonS = `${Math.abs(lf.lon).toFixed(1)}°${lf.lon >= 0 ? 'E' : 'W'}`;
+          results.push({
+            icon: '🌕',
+            title: `${lf.name} (${lf.latin})`,
+            subtitle: `Lune · Sélénographie (${latS}, ${lonS})${lf.diamKm ? ` · Ø ${lf.diamKm} km` : ''}`,
+            badge: lf.type === 'crater' ? 'Cratère lunaire' : lf.type === 'mons' ? 'Massif lunaire' : 'Mer lunaire',
+            actionFn: () => {
+              this.findAndCenterObjectById('Moon');
+              if (this.state.selectedObject && this.state.selectedObject.id === 'Moon') {
+                this.state.selectedObject.lunarFeature = lf;
+                this.state.selectedObject.name = `${lf.name} (Lune)`;
+                this.objectCardUI.render(this.state.selectedObject);
+              }
+              this.viewport.setFov(0.8);
+              this._updateFovChip();
+              this.requestRender();
+            }
+          });
+          if (results.length >= limit) break;
+        }
       }
     }
 

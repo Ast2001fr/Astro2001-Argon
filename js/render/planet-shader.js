@@ -133,22 +133,22 @@ export class PlanetShaderRenderer {
 
   async loadBitmapTextures() {
     const fileMap = {
-      Sun: 'assets/textures/sun.png',
-      Moon: 'assets/textures/moon.png',
-      Mercury: 'assets/textures/mercury.png',
-      Venus: 'assets/textures/venus.png',
-      Earth: 'assets/textures/earth.png',
-      Mars: 'assets/textures/mars.png',
-      Jupiter: 'assets/textures/jupiter.png',
-      Saturn: 'assets/textures/saturn.png',
-      Uranus: 'assets/textures/uranus.png',
-      Neptune: 'assets/textures/neptune.png'
+      Sun: 'assets/textures/sun.png?v=10',
+      Moon: 'assets/textures/moon.png?v=10',
+      Mercury: 'assets/textures/mercury.png?v=10',
+      Venus: 'assets/textures/venus.png?v=10',
+      Earth: 'assets/textures/earth.png?v=10',
+      Mars: 'assets/textures/mars.png?v=10',
+      Jupiter: 'assets/textures/jupiter.png?v=10',
+      Saturn: 'assets/textures/saturn.png?v=10',
+      Uranus: 'assets/textures/uranus.png?v=10',
+      Neptune: 'assets/textures/neptune.png?v=10'
     };
 
     for (const [bodyId, url] of Object.entries(fileMap)) {
       this._loadSingleTexture(bodyId, url);
     }
-    this._loadRingTexture('assets/textures/saturn_rings.png');
+    this._loadRingTexture('assets/textures/saturn_rings.png?v=10');
   }
 
   _loadSingleTexture(bodyId, url) {
@@ -167,6 +167,7 @@ export class PlanetShaderRenderer {
         data: imgData.data
       });
       this.cacheCanvases.delete(bodyId);
+      if (this.onTextureLoaded) this.onTextureLoaded();
     };
     img.src = url;
   }
@@ -187,6 +188,7 @@ export class PlanetShaderRenderer {
         data: imgData.data
       };
       this.cacheCanvases.delete('Saturn');
+      if (this.onTextureLoaded) this.onTextureLoaded();
     };
     img.src = url;
   }
@@ -210,11 +212,12 @@ export class PlanetShaderRenderer {
       return;
     }
 
-    // Clamp shader resolution for performance (24px to 180px diameter)
-    const diskR = Math.min(96, Math.max(12, Math.round(radiusPx)));
+    // Allow higher shader resolution for the Moon when zoomed in (up to 260px radius = 520px diameter)
+    const maxRes = bodyId === 'Moon' ? 260 : 110;
+    const diskR = Math.min(maxRes, Math.max(12, Math.round(radiusPx)));
     const isSaturn = bodyId === 'Saturn';
-    const canvasHalfW = isSaturn ? Math.ceil(diskR * 2.5) : Math.ceil(diskR * 1.15);
-    const canvasHalfH = isSaturn ? Math.ceil(diskR * 1.6) : Math.ceil(diskR * 1.15);
+    const canvasHalfW = isSaturn ? Math.ceil(diskR * 2.5) : Math.ceil(diskR * 1.08);
+    const canvasHalfH = isSaturn ? Math.ceil(diskR * 1.6) : Math.ceil(diskR * 1.08);
     const cw = canvasHalfW * 2;
     const ch = canvasHalfH * 2;
 
@@ -225,7 +228,7 @@ export class PlanetShaderRenderer {
     const ringTilt = ephem.ringTiltDeg ?? (isSaturn ? 14 : 0);
 
     // Cache key quantized to avoid re-shading every frame when static
-    const key = `${diskR}|${Math.round(phaseDeg)}|${Math.round(paLimb / 2)}|${Math.round(cML / 2)}|${Math.round(ringTilt)}|${nightVision ? 1 : 0}`;
+    const key = `${diskR}|${Math.round(phaseDeg)}|${Math.round(paLimb / 2)}|${Math.round(cML * 2)}|${Math.round(subLat * 2)}|${Math.round(ringTilt)}|${nightVision ? 1 : 0}`;
     let cached = this.cacheCanvases.get(bodyId);
     if (!cached || cached.key !== key) {
       const offCanvas = cached ? cached.canvas : document.createElement('canvas');
@@ -399,7 +402,7 @@ export class PlanetShaderRenderer {
           // Anti-aliased edge feathering
           const edgeAlpha = Math.min(1.0, (1.0 - Math.sqrt(r2)) * diskR * 1.4);
 
-          // Rotate surface normal by sub-Earth latitude to get planetocentric coordinates
+          // Rotate surface normal by sub-Earth latitude to get planetocentric/selenographic coordinates
           const xPlanet = nxScreen;
           const yPlanet = nyOblate * cosSubLat - nz * sinSubLat;
           const zPlanet = nyOblate * sinSubLat + nz * cosSubLat;
@@ -407,16 +410,53 @@ export class PlanetShaderRenderer {
           const lat = Math.asin(Math.max(-1, Math.min(1, -yPlanet)));
           const lon = Math.atan2(xPlanet, zPlanet) + lon0;
 
-          const u = ((lon / (Math.PI * 2)) % 1 + 1) % 1;
-          const v = 0.5 - lat / Math.PI;
+          // In NASA/USGS equirectangular lunar maps (moon.png), u = 0.5 is 0° selenographic longitude (center of nearside)
+          const uOffset = isMoon ? 0.5 : 0.0;
+          const u = (((lon / (Math.PI * 2)) + uOffset) % 1 + 1) % 1;
+          const v = Math.max(0, Math.min(1, 0.5 - lat / Math.PI));
 
-          const tx = Math.min(texW - 1, Math.floor(u * texW));
-          const ty = Math.min(texH - 1, Math.floor(v * texH));
-          const tIdx = (ty * texW + tx) * 4;
+          let tr, tg, tb;
+          if (diskR >= 36) {
+            // Bilinear texture filtering for crisp high-zoom lunar/planetary views
+            const fx = u * (texW - 1);
+            const fy = v * (texH - 1);
+            const x0 = Math.floor(fx);
+            const y0 = Math.floor(fy);
+            const x1 = Math.min(texW - 1, x0 + 1);
+            const y1 = Math.min(texH - 1, y0 + 1);
+            const wx = fx - x0;
+            const wy = fy - y0;
 
-          let tr = texData[tIdx];
-          let tg = texData[tIdx + 1];
-          let tb = texData[tIdx + 2];
+            const i00 = (y0 * texW + x0) * 4;
+            const i10 = (y0 * texW + x1) * 4;
+            const i01 = (y1 * texW + x0) * 4;
+            const i11 = (y1 * texW + x1) * 4;
+
+            const w00 = (1 - wx) * (1 - wy);
+            const w10 = wx * (1 - wy);
+            const w01 = (1 - wx) * wy;
+            const w11 = wx * wy;
+
+            tr = texData[i00] * w00 + texData[i10] * w10 + texData[i01] * w01 + texData[i11] * w11;
+            tg = texData[i00 + 1] * w00 + texData[i10 + 1] * w10 + texData[i01 + 1] * w01 + texData[i11 + 1] * w11;
+            tb = texData[i00 + 2] * w00 + texData[i10 + 2] * w10 + texData[i01 + 2] * w01 + texData[i11 + 2] * w11;
+          } else {
+            const tx = Math.min(texW - 1, Math.floor(u * texW));
+            const ty = Math.min(texH - 1, Math.floor(v * texH));
+            const tIdx = (ty * texW + tx) * 4;
+            tr = texData[tIdx];
+            tg = texData[tIdx + 1];
+            tb = texData[tIdx + 2];
+          }
+
+          if (isMoon) {
+            // Subtle warm-neutral lunar regolith tint & contrast curve so maria and rayed craters stand out naturally
+            const norm = tr / 255;
+            const contrasted = Math.max(0.08, Math.min(1.0, 0.5 + (norm - 0.5) * 1.22));
+            tr = contrasted * 246;
+            tg = contrasted * 242;
+            tb = contrasted * 234;
+          }
 
           if (isSun) {
             // Linear solar limb darkening: I(μ) = 1 - u*(1 - μ), u = 0.6 (Neckel & Labs 1994)
@@ -431,21 +471,20 @@ export class PlanetShaderRenderer {
             const mu = nz;
             const isRegolith = isMoon || bodyId === 'Mercury' || bodyId === 'Mars';
             let light = 0;
-            if (mu0 > -0.04) {
-              const effMu0 = Math.max(0, (mu0 + 0.04) / 1.04);
+            if (mu0 > -0.05) {
+              const effMu0 = Math.max(0, (mu0 + 0.05) / 1.05);
               if (isRegolith) {
                 // Lommel-Seeliger law for regolith-covered globes: I ∝ μ0 / (μ0 + μ)
-                // (Seeliger 1887; Hapke 1993 §8; McEwen 1991, LPSC XXII, 1135)
                 const ls = (2.0 * effMu0) / Math.max(1e-4, effMu0 + mu);
-                light = isMoon ? ls * (0.78 + 0.22 * effMu0) : ls * (0.65 + 0.35 * effMu0);
+                light = isMoon ? ls * (0.76 + 0.24 * effMu0) : ls * (0.65 + 0.35 * effMu0);
               } else {
                 // Venus and gas giants: Lambert's law with limb darkening
                 light = Math.pow(effMu0, 0.78) * Math.pow(mu, 0.25);
               }
             }
 
-            // Earthshine on the unlit lunar crescent (lumière cendrée)
-            const ambient = isMoon ? 0.055 : 0.028;
+            // Earthshine on the unlit lunar crescent (slightly brighter when zoomed in so features remain discernible)
+            const ambient = isMoon ? (diskR >= 32 ? 0.15 : 0.065) : 0.028;
             const illum = Math.max(ambient, light);
 
             finalR = tr * illum;

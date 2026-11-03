@@ -3,8 +3,8 @@
  * Progressive Web App Service Worker for offline operation and optional pack caching.
  */
 
-const CACHE_CORE = 'uranometrie-core-v9';
-const CACHE_PACKS = 'uranometrie-packs-v9';
+const CACHE_CORE = 'uranometrie-core-v10';
+const CACHE_PACKS = 'uranometrie-packs-v10';
 
 const CORE_ASSETS = [
   './',

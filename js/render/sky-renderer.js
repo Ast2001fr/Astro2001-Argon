@@ -7,11 +7,69 @@
  * 4) Solar System View (3D orbitable heliocentric system with planets & 8 asteroids)
  */
 
-import { PlanetShaderRenderer } from './planet-shader.js?v=9';
-import { MilkyWayAndHipsRenderer } from './milkyway-hips.js?v=9';
+import { PlanetShaderRenderer } from './planet-shader.js?v=10';
+import { MilkyWayAndHipsRenderer } from './milkyway-hips.js?v=10';
 
 const DEG2RAD = Math.PI / 180;
 const RAD2DEG = 180 / Math.PI;
+
+/**
+ * Selenographic catalog of major Lunar structures (IAU coordinates: lat° N/S, lon° E/W)
+ * Progressive zoom tiers via `minRadiusPx` (apparent Moon radius in pixels on screen):
+ * - Tier 1 (minRadiusPx: 26): Major Maria, Oceanus & iconic rayed craters
+ * - Tier 2 (minRadiusPx: 58): Secondary Maria, Sinus, Mountain ranges & large craters
+ * - Tier 3 (minRadiusPx: 115): Detailed craters, Ptolemaeus-Alphonsus-Arzachel trio & Apollo sites
+ */
+export const LUNAR_FEATURES = [
+  // Tier 1 — Major Maria & Oceanus
+  { id: 'LUN:Procellarum', name: 'Océan des Tempêtes', latin: 'Oceanus Procellarum', kind: 'mare', lat: 18.4, lon: -57.4, diamKm: 2568, minRadiusPx: 26, priority: 92 },
+  { id: 'LUN:Imbrium', name: 'Mer des Pluies', latin: 'Mare Imbrium', kind: 'mare', lat: 32.8, lon: -15.6, diamKm: 1145, minRadiusPx: 24, priority: 95 },
+  { id: 'LUN:Serenitatis', name: 'Mer de la Sérénité', latin: 'Mare Serenitatis', kind: 'mare', lat: 28.0, lon: 17.5, diamKm: 674, minRadiusPx: 26, priority: 94 },
+  { id: 'LUN:Tranquillitatis', name: 'Mer de la Tranquillité', latin: 'Mare Tranquillitatis', kind: 'mare', lat: 8.5, lon: 31.4, diamKm: 875, minRadiusPx: 24, priority: 95 },
+  { id: 'LUN:Crisium', name: 'Mer des Crises', latin: 'Mare Crisium', kind: 'mare', lat: 17.0, lon: 59.1, diamKm: 555, minRadiusPx: 26, priority: 91 },
+  { id: 'LUN:Fecunditatis', name: 'Mer de la Fécondité', latin: 'Mare Fecunditatis', kind: 'mare', lat: -7.8, lon: 51.3, diamKm: 840, minRadiusPx: 28, priority: 89 },
+  { id: 'LUN:Nubium', name: 'Mer des Nuées', latin: 'Mare Nubium', kind: 'mare', lat: -21.3, lon: -16.6, diamKm: 715, minRadiusPx: 28, priority: 90 },
+  { id: 'LUN:Humorum', name: 'Mer des Humeurs', latin: 'Mare Humorum', kind: 'mare', lat: -24.4, lon: -38.6, diamKm: 425, minRadiusPx: 32, priority: 87 },
+  // Tier 1 — Iconic Craters
+  { id: 'LUN:Tycho', name: 'Tycho', latin: 'Tycho', kind: 'crater', lat: -43.31, lon: -11.36, diamKm: 85, minRadiusPx: 26, priority: 93 },
+  { id: 'LUN:Copernicus', name: 'Copernic', latin: 'Copernicus', kind: 'crater', lat: 9.62, lon: -20.08, diamKm: 93, minRadiusPx: 26, priority: 93 },
+  { id: 'LUN:Plato', name: 'Platon', latin: 'Plato', kind: 'crater', lat: 51.6, lon: -9.3, diamKm: 101, minRadiusPx: 32, priority: 88 },
+  { id: 'LUN:Aristarchus', name: 'Aristarque', latin: 'Aristarchus', kind: 'crater', lat: 23.7, lon: -47.4, diamKm: 40, minRadiusPx: 34, priority: 86 },
+  { id: 'LUN:Kepler', name: 'Kepler', latin: 'Kepler', kind: 'crater', lat: 8.1, lon: -38.0, diamKm: 32, minRadiusPx: 38, priority: 84 },
+
+  // Tier 2 — Secondary Maria, Sinus, Mountains & Classic Craters
+  { id: 'LUN:Frigoris', name: 'Mer du Froid', latin: 'Mare Frigoris', kind: 'mare', lat: 56.0, lon: 1.4, diamKm: 1446, minRadiusPx: 48, priority: 82 },
+  { id: 'LUN:Nectaris', name: 'Mer du Nectar', latin: 'Mare Nectaris', kind: 'mare', lat: -15.2, lon: 35.5, diamKm: 333, minRadiusPx: 48, priority: 83 },
+  { id: 'LUN:Vaporum', name: 'Mer des Vapeurs', latin: 'Mare Vaporum', kind: 'mare', lat: 13.3, lon: 3.6, diamKm: 242, minRadiusPx: 58, priority: 78 },
+  { id: 'LUN:Cognitum', name: 'Mer Connue', latin: 'Mare Cognitum', kind: 'mare', lat: -10.0, lon: -23.1, diamKm: 376, minRadiusPx: 65, priority: 76 },
+  { id: 'LUN:SinusIridum', name: 'Golfe des Iris', latin: 'Sinus Iridum', kind: 'sinus', lat: 44.1, lon: -31.5, diamKm: 249, minRadiusPx: 52, priority: 81 },
+  { id: 'LUN:Apenninus', name: 'Monts Apennins', latin: 'Montes Apenninus', kind: 'montes', lat: 19.9, lon: -0.1, diamKm: 600, minRadiusPx: 52, priority: 83 },
+  { id: 'LUN:Alpes', name: 'Monts Alpes', latin: 'Montes Alpes', kind: 'montes', lat: 46.4, lon: -0.8, diamKm: 281, minRadiusPx: 62, priority: 77 },
+  { id: 'LUN:Carpatus', name: 'Monts Carpates', latin: 'Montes Carpatus', kind: 'montes', lat: 14.5, lon: -24.4, diamKm: 361, minRadiusPx: 72, priority: 74 },
+  { id: 'LUN:Clavius', name: 'Clavius', latin: 'Clavius', kind: 'crater', lat: -58.4, lon: -14.4, diamKm: 231, minRadiusPx: 48, priority: 82 },
+  { id: 'LUN:Archimedes', name: 'Archimède', latin: 'Archimedes', kind: 'crater', lat: 29.7, lon: -4.0, diamKm: 81, minRadiusPx: 58, priority: 79 },
+  { id: 'LUN:Grimaldi', name: 'Grimaldi', latin: 'Grimaldi', kind: 'crater', lat: -5.2, lon: -68.6, diamKm: 173, minRadiusPx: 58, priority: 77 },
+  { id: 'LUN:Gassendi', name: 'Gassendi', latin: 'Gassendi', kind: 'crater', lat: -17.5, lon: -39.9, diamKm: 111, minRadiusPx: 62, priority: 76 },
+  { id: 'LUN:Theophilus', name: 'Théophile', latin: 'Theophilus', kind: 'crater', lat: -11.4, lon: 26.4, diamKm: 100, minRadiusPx: 58, priority: 79 },
+  { id: 'LUN:Posidonius', name: 'Posidonius', latin: 'Posidonius', kind: 'crater', lat: 31.8, lon: 29.9, diamKm: 95, minRadiusPx: 65, priority: 75 },
+  { id: 'LUN:Langrenus', name: 'Langrenus', latin: 'Langrenus', kind: 'crater', lat: -8.9, lon: 60.9, diamKm: 132, minRadiusPx: 65, priority: 75 },
+  { id: 'LUN:Petavius', name: 'Pétavius', latin: 'Petavius', kind: 'crater', lat: -25.3, lon: 60.4, diamKm: 177, minRadiusPx: 65, priority: 74 },
+
+  // Tier 3 — High-Zoom Craters & Historic Apollo Landing Sites
+  { id: 'LUN:Ptolemaeus', name: 'Ptolémée', latin: 'Ptolemaeus', kind: 'crater', lat: -9.2, lon: -1.8, diamKm: 154, minRadiusPx: 95, priority: 73 },
+  { id: 'LUN:Alphonsus', name: 'Alphonse', latin: 'Alphonsus', kind: 'crater', lat: -13.4, lon: -2.8, diamKm: 111, minRadiusPx: 110, priority: 71 },
+  { id: 'LUN:Arzachel', name: 'Arzachel', latin: 'Arzachel', kind: 'crater', lat: -18.2, lon: -1.9, diamKm: 97, minRadiusPx: 115, priority: 70 },
+  { id: 'LUN:Albategnius', name: 'Albategnius', latin: 'Albategnius', kind: 'crater', lat: -11.2, lon: 4.1, diamKm: 131, minRadiusPx: 105, priority: 71 },
+  { id: 'LUN:Eratosthenes', name: 'Ératosthène', latin: 'Eratosthenes', kind: 'crater', lat: 14.5, lon: -11.3, diamKm: 59, minRadiusPx: 100, priority: 72 },
+  { id: 'LUN:Aristoteles', name: 'Aristote', latin: 'Aristoteles', kind: 'crater', lat: 50.2, lon: 17.4, diamKm: 88, minRadiusPx: 105, priority: 70 },
+  { id: 'LUN:Eudoxus', name: 'Eudoxe', latin: 'Eudoxus', kind: 'crater', lat: 44.3, lon: 16.3, diamKm: 67, minRadiusPx: 115, priority: 68 },
+  { id: 'LUN:Schickard', name: 'Schickard', latin: 'Schickard', kind: 'crater', lat: -44.4, lon: -55.1, diamKm: 212, minRadiusPx: 105, priority: 69 },
+  { id: 'LUN:Bullialdus', name: 'Bullialdus', latin: 'Bullialdus', kind: 'crater', lat: -20.7, lon: -22.2, diamKm: 61, minRadiusPx: 110, priority: 68 },
+  { id: 'LUN:Catharina', name: 'Catherine', latin: 'Catharina', kind: 'crater', lat: -18.0, lon: 23.6, diamKm: 100, minRadiusPx: 120, priority: 67 },
+  { id: 'LUN:Cyrillus', name: 'Cyrille', latin: 'Cyrillus', kind: 'crater', lat: -13.2, lon: 24.0, diamKm: 98, minRadiusPx: 125, priority: 66 },
+  { id: 'LUN:Piccolomini', name: 'Piccolomini', latin: 'Piccolomini', kind: 'crater', lat: -29.7, lon: 32.2, diamKm: 88, minRadiusPx: 115, priority: 67 },
+  { id: 'LUN:Apollo11', name: 'Apollo 11', latin: 'Statio Tranquillitatis (1969)', kind: 'landing', lat: 0.67, lon: 23.47, diamKm: 1, minRadiusPx: 95, priority: 75 }
+];
 
 /**
  * Localized French common names for iconic Deep Sky Objects (matching Astro2001 cartography)
@@ -184,6 +242,7 @@ export class SkyRenderer {
 
   setOnAsyncAssetLoad(cb) {
     this.mwHips.onTileLoaded = cb;
+    this.planetShader.onTextureLoaded = cb;
     this._onAssetLoaded = cb;
   }
 
@@ -1734,8 +1793,11 @@ export class SkyRenderer {
       let drawRadiusPx = trueRadiusPx;
 
       if (!realSizes) {
-        if (body.id === 'Sun' || body.id === 'Moon') {
-          drawRadiusPx = Math.max(9, trueRadiusPx);
+        if (body.id === 'Moon') {
+          const boost = viewport.fov > 3 ? 1 + 0.55 * Math.min(1, (viewport.fov - 3) / 15) : 1.0;
+          drawRadiusPx = Math.max(10, trueRadiusPx * boost);
+        } else if (body.id === 'Sun') {
+          drawRadiusPx = Math.max(9.5, trueRadiusPx);
         } else {
           const minPlanetR = Math.max(4.5, 7.5 - (body.mag || 1) * 0.6);
           drawRadiusPx = Math.max(minPlanetR, trueRadiusPx);
@@ -1754,6 +1816,11 @@ export class SkyRenderer {
       });
 
       this._reserveObstacle(p.x, p.y, drawRadiusPx + 4);
+
+      // Render Selenographic Lunar Structures (Maria, Craters, Mountains, Apollo 11) when zooming onto the Moon
+      if (body.id === 'Moon' && drawRadiusPx >= 24) {
+        this._renderLunarFeaturesOnDisk(ctx, state, body, p.x, p.y, drawRadiusPx, nightVision);
+      }
 
       // Render Galilean moons of Jupiter and main moons of Saturn when zoomed in (< 4° FOV)
       if ((body.id === 'Jupiter' || body.id === 'Saturn') && body.moons && viewport.fov < 4.5) {
@@ -1820,6 +1887,163 @@ export class SkyRenderer {
         data: body
       });
     }
+  }
+
+  /**
+   * 9b. Selenographic Lunar Nomenclature Overlay when zooming onto the Moon
+   * Projects exact IAU selenographic coordinates (lat, lon) onto the orthographic lunar disk
+   * accounting for optical libration in longitude (cML = -librationLonDeg) and latitude (subEarthLatDeg).
+   */
+  _renderLunarFeaturesOnDisk(ctx, state, moonBody, cx, cy, radiusPx, nightVision) {
+    const lon0 = (moonBody.cML || 0) * DEG2RAD;
+    const subLat = (moonBody.subEarthLatDeg || 0) * DEG2RAD;
+    const sinSubLat = Math.sin(subLat);
+    const cosSubLat = Math.cos(subLat);
+    const lang = state.lang || 'fr';
+
+    // Dedicated collision boxes on the lunar disk so selenographic labels never overlap each other
+    const lunarBoxes = [];
+    const isLunarBoxFree = (x1, y1, x2, y2) => {
+      for (let i = 0; i < lunarBoxes.length; i++) {
+        const b = lunarBoxes[i];
+        if (x1 < b.x2 && x2 > b.x1 && y1 < b.y2 && y2 > b.y1) return false;
+      }
+      return true;
+    };
+
+    ctx.save();
+    ctx.textBaseline = 'alphabetic';
+    ctx.lineJoin = 'round';
+    ctx.miterLimit = 2;
+
+    for (let i = 0; i < LUNAR_FEATURES.length; i++) {
+      const feat = LUNAR_FEATURES[i];
+      if (radiusPx < feat.minRadiusPx) continue;
+
+      const latRad = feat.lat * DEG2RAD;
+      const lonRad = feat.lon * DEG2RAD - lon0;
+      const cosLat = Math.cos(latRad);
+      const sinLat = Math.sin(latRad);
+
+      const xPlanet = cosLat * Math.sin(lonRad);
+      const yPlanet = -sinLat;
+      const zPlanet = cosLat * Math.cos(lonRad);
+
+      // Inverse of planet-shader.js sub-Earth latitude tilt
+      const nxScreen = xPlanet;
+      const nyScreen = yPlanet * cosSubLat + zPlanet * sinSubLat;
+      const nz = -yPlanet * sinSubLat + zPlanet * cosSubLat;
+
+      // Skip features too close to the foreshortened lunar limb
+      if (nz < 0.24) continue;
+
+      const sx = cx + nxScreen * radiusPx;
+      const sy = cy + nyScreen * radiusPx;
+
+      // Draw subtle cartographic marker for craters, mountains, and landing sites
+      if (feat.kind === 'crater') {
+        const craterR = Math.max(2.0, Math.min(9.0, (feat.diamKm / 3474.8) * radiusPx));
+        ctx.strokeStyle = nightVision ? 'rgba(255, 95, 70, 0.82)' : 'rgba(255, 232, 165, 0.78)';
+        ctx.lineWidth = 0.95;
+        ctx.beginPath();
+        ctx.arc(sx, sy, craterR, 0, Math.PI * 2);
+        ctx.stroke();
+        lunarBoxes.push({ x1: sx - craterR - 1, y1: sy - craterR - 1, x2: sx + craterR + 1, y2: sy + craterR + 1 });
+      } else if (feat.kind === 'landing') {
+        const r = 3.2;
+        ctx.strokeStyle = nightVision ? '#ff6044' : '#5cffb8';
+        ctx.lineWidth = 1.2;
+        ctx.beginPath();
+        ctx.moveTo(sx, sy - r);
+        ctx.lineTo(sx + r, sy);
+        ctx.lineTo(sx, sy + r);
+        ctx.lineTo(sx - r, sy);
+        ctx.closePath();
+        ctx.stroke();
+      } else if (feat.kind === 'montes') {
+        ctx.fillStyle = nightVision ? '#ff7658' : '#f2ca78';
+        ctx.beginPath();
+        ctx.moveTo(sx, sy - 3);
+        ctx.lineTo(sx + 2.8, sy + 2);
+        ctx.lineTo(sx - 2.8, sy + 2);
+        ctx.closePath();
+        ctx.fill();
+      }
+
+      // Typography by lunar feature category
+      const labelText = lang === 'fr' ? feat.name : feat.latin;
+      let font, color;
+      if (feat.kind === 'mare' || feat.kind === 'sinus') {
+        const fSize = radiusPx >= 110 ? 11 : 9.8;
+        font = `italic 600 ${fSize}px "IBM Plex Sans", system-ui, sans-serif`;
+        color = nightVision ? '#ff8266' : '#a8deff';
+      } else if (feat.kind === 'montes') {
+        font = '600 9.8px "IBM Plex Sans", system-ui, sans-serif';
+        color = nightVision ? '#ff7c5e' : '#f5d084';
+      } else if (feat.kind === 'landing') {
+        font = '600 9.8px "IBM Plex Mono", monospace';
+        color = nightVision ? '#ff6a4e' : '#68ffc0';
+      } else {
+        font = '500 10px "IBM Plex Sans", system-ui, sans-serif';
+        color = nightVision ? '#ff8e72' : '#fff3cc';
+      }
+
+      ctx.font = font;
+      const textW = Math.ceil(ctx.measureText(labelText).width);
+      const textH = 10;
+      const padX = 3;
+      const padY = 2;
+
+      let candidates;
+      if (feat.kind === 'mare' || feat.kind === 'sinus') {
+        candidates = [
+          { tx: sx, ty: sy + 3, align: 'center', x1: sx - textW * 0.5 - padX, y1: sy + 3 - textH - padY, x2: sx + textW * 0.5 + padX, y2: sy + 3 + padY },
+          { tx: sx, ty: sy - 7, align: 'center', x1: sx - textW * 0.5 - padX, y1: sy - 7 - textH - padY, x2: sx + textW * 0.5 + padX, y2: sy - 7 + padY },
+          { tx: sx, ty: sy + 13, align: 'center', x1: sx - textW * 0.5 - padX, y1: sy + 13 - textH - padY, x2: sx + textW * 0.5 + padX, y2: sy + 13 + padY }
+        ];
+      } else {
+        const off = 5;
+        candidates = [
+          { tx: sx + off, ty: sy + 3, align: 'left', x1: sx + off - padX, y1: sy + 3 - textH - padY, x2: sx + off + textW + padX, y2: sy + 3 + padY },
+          { tx: sx - off, ty: sy + 3, align: 'right', x1: sx - off - textW - padX, y1: sy + 3 - textH - padY, x2: sx - off + padX, y2: sy + 3 + padY },
+          { tx: sx, ty: sy - 5, align: 'center', x1: sx - textW * 0.5 - padX, y1: sy - 5 - textH - padY, x2: sx + textW * 0.5 + padX, y2: sy - 5 + padY }
+        ];
+      }
+
+      let chosen = null;
+      for (let c = 0; c < candidates.length; c++) {
+        const cand = candidates[c];
+        if (isLunarBoxFree(cand.x1, cand.y1, cand.x2, cand.y2)) {
+          chosen = cand;
+          break;
+        }
+      }
+
+      if (chosen) {
+        lunarBoxes.push({ x1: chosen.x1, y1: chosen.y1, x2: chosen.x2, y2: chosen.y2 });
+        ctx.textAlign = chosen.align;
+        ctx.strokeStyle = nightVision ? 'rgba(8, 0, 0, 0.94)' : 'rgba(4, 7, 15, 0.92)';
+        ctx.lineWidth = 2.8;
+        ctx.strokeText(labelText, chosen.tx, chosen.ty);
+        ctx.fillStyle = color;
+        ctx.fillText(labelText, chosen.tx, chosen.ty);
+      }
+
+      // Register clickable target on the lunar surface so clicking a crater/mare shows its details
+      this.screenTargets.push({
+        type: 'planet',
+        id: 'Moon',
+        lunarFeature: feat,
+        name: `${feat.name} (${feat.latin})`,
+        x: sx,
+        y: sy,
+        hitRadius: 10,
+        priority: 48,
+        data: moonBody
+      });
+    }
+
+    ctx.restore();
   }
 
   /**
