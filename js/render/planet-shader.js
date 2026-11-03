@@ -212,9 +212,16 @@ export class PlanetShaderRenderer {
       return;
     }
 
-    // Allow higher shader resolution for the Moon when zoomed in (up to 260px radius = 520px diameter)
-    const maxRes = bodyId === 'Moon' ? 260 : 110;
-    const diskR = Math.min(maxRes, Math.max(12, Math.round(radiusPx)));
+    // Quantize shader resolution into discrete LOD tiers so zooming scales via GPU drawImage
+    // instead of re-running per-pixel raycasting on every wheel/pinch frame!
+    let diskR;
+    if (radiusPx <= 18) diskR = 16;
+    else if (radiusPx <= 34) diskR = 28;
+    else if (radiusPx <= 62) diskR = 52;
+    else if (radiusPx <= 110) diskR = 96;
+    else if (bodyId === 'Moon' && radiusPx <= 175) diskR = 156;
+    else diskR = bodyId === 'Moon' ? 220 : 108;
+
     const isSaturn = bodyId === 'Saturn';
     const canvasHalfW = isSaturn ? Math.ceil(diskR * 2.5) : Math.ceil(diskR * 1.08);
     const canvasHalfH = isSaturn ? Math.ceil(diskR * 1.6) : Math.ceil(diskR * 1.08);

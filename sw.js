@@ -3,8 +3,8 @@
  * Progressive Web App Service Worker for offline operation and optional pack caching.
  */
 
-const CACHE_CORE = 'uranometrie-core-v10';
-const CACHE_PACKS = 'uranometrie-packs-v10';
+const CACHE_CORE = 'uranometrie-core-v11';
+const CACHE_PACKS = 'uranometrie-packs-v11';
 
 const CORE_ASSETS = [
   './',
@@ -22,6 +22,7 @@ const CORE_ASSETS = [
   './js/render/projection.js',
   './js/render/planet-shader.js',
   './js/render/milkyway-hips.js',
+  './js/render/webgl-sky.js',
   './js/render/sky-renderer.js',
   './js/ui/object-card.js',
   './js/ui/panels.js',

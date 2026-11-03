@@ -7,8 +7,9 @@
  * 4) Solar System View (3D orbitable heliocentric system with planets & 8 asteroids)
  */
 
-import { PlanetShaderRenderer } from './planet-shader.js?v=10';
-import { MilkyWayAndHipsRenderer } from './milkyway-hips.js?v=10';
+import { PlanetShaderRenderer } from './planet-shader.js?v=11';
+import { MilkyWayAndHipsRenderer } from './milkyway-hips.js?v=11';
+import { WebGLSkyAccelerator } from './webgl-sky.js?v=11';
 
 const DEG2RAD = Math.PI / 180;
 const RAD2DEG = 180 / Math.PI;
@@ -214,9 +215,13 @@ export class SkyRenderer {
 
     this.planetShader = new PlanetShaderRenderer();
     this.mwHips = new MilkyWayAndHipsRenderer();
+    this.webglSky = new WebGLSkyAccelerator();
 
     // DSO Photo Image cache (135 real photos in assets/dso/)
     this.dsoPhotoCache = new Map();
+
+    // Cached text width measurements (font|text -> widthPx)
+    this.textWidthCache = new Map();
 
     // Active screen hit targets populated during each render frame for click/hover selection
     this.screenTargets = [];
@@ -226,7 +231,7 @@ export class SkyRenderer {
     this.deferredLabels = [];
 
     // Telemetry stats for bottom-left Astro2001 status strip
-    this.lastRenderMs = 2.5;
+    this.lastRenderMs = 1.2;
     this.lastLimitMag = 6.5;
 
     // Shooting star particles for active meteor showers
@@ -243,6 +248,7 @@ export class SkyRenderer {
   setOnAsyncAssetLoad(cb) {
     this.mwHips.onTileLoaded = cb;
     this.planetShader.onTextureLoaded = cb;
+    this.webglSky.onAssetLoaded = cb;
     this._onAssetLoaded = cb;
   }
 
@@ -324,14 +330,26 @@ export class SkyRenderer {
     ctx.lineJoin = 'round';
     ctx.miterLimit = 2;
 
+    let currentFont = '';
     for (let i = 0; i < this.deferredLabels.length; i++) {
       const item = this.deferredLabels[i];
       const text = item.text;
       if (!text) continue;
 
-      ctx.font = item.font || '500 11px "IBM Plex Sans", system-ui, -apple-system, sans-serif';
-      const metrics = ctx.measureText(text);
-      const textW = Math.ceil(metrics.width);
+      const fontStr = item.font || '500 11px "IBM Plex Sans", system-ui, -apple-system, sans-serif';
+      if (fontStr !== currentFont) {
+        ctx.font = fontStr;
+        currentFont = fontStr;
+      }
+
+      const cacheKey = `${fontStr}|${text}`;
+      let textW = this.textWidthCache.get(cacheKey);
+      if (textW === undefined) {
+        textW = Math.ceil(ctx.measureText(text).width);
+        if (this.textWidthCache.size > 4000) this.textWidthCache.clear();
+        this.textWidthCache.set(cacheKey, textW);
+      }
+
       const textH = item.heightPx || 11;
       const padX = item.padX ?? 5;
       const padY = item.padY ?? 3;
@@ -447,6 +465,9 @@ export class SkyRenderer {
       return;
     }
 
+    // Prepare 3x3 Equatorial->Camera orthonormal basis matrix once per frame
+    viewport.prepareFrameMatrices(state.lstDeg, state.observer.lat);
+
     // Provide helper on viewport for HiPS inverse lookup
     viewport.unprojectEqAtScreen = (sx, sy) => {
       if (viewport.viewMode === 'celestial') {
@@ -456,16 +477,7 @@ export class SkyRenderer {
       return this._horizontalToEquatorial(hor.altDeg, hor.azDeg, state.lstDeg, state.observer.lat);
     };
 
-    const projectRaDec = (raDeg, decDeg) => {
-      if (viewport.viewMode === 'celestial') {
-        return viewport.projectCelestialGlobe(raDeg, decDeg);
-      }
-      const hor = this._equatorialToHorizontal(raDeg, decDeg, state.lstDeg, state.observer.lat);
-      const p = viewport.projectAltAz(hor.alt, hor.az);
-      p.alt = hor.alt;
-      p.az = hor.az;
-      return p;
-    };
+    const projectRaDec = (raDeg, decDeg) => viewport.projectRaDecFast(raDeg, decDeg);
 
     // 1. Sky Background & Atmosphere
     this._renderSkyBackground(ctx, state, nightVision, isAlmanach);
@@ -489,11 +501,11 @@ export class SkyRenderer {
       ctx.clip();
     }
 
-    // 2. Photographic Sky Survey (HiPS DSS2 Color) OR Milky Way Panorama
+    // 2. Photographic Sky Survey (HiPS DSS2 Color) OR GPU Milky Way Panorama
     if (state.toggles.dssHips) {
       this.mwHips.renderHipsDSS2(ctx, viewport, projectRaDec, nightVision);
     } else if (state.toggles.milkyWay) {
-      this.mwHips.renderMilkyWay(ctx, viewport, {
+      const mwOpts = {
         lstDeg: state.lstDeg,
         latDeg: state.observer.lat,
         sunAltDeg: state.sun ? state.sun.alt : -30,
@@ -501,7 +513,10 @@ export class SkyRenderer {
         atmosphereEnabled: state.toggles.atmosphere,
         groundEnabled: state.toggles.ground,
         nightVision
-      });
+      };
+      if (!this.webglSky.renderMilkyWay(ctx, viewport, mwOpts)) {
+        this.mwHips.renderMilkyWay(ctx, viewport, mwOpts);
+      }
     }
 
     // 2b. Embedded DSO Photos (drawn under stars so field stars shine crisply on top of nebulae)
@@ -998,17 +1013,21 @@ export class SkyRenderer {
           const dDec = dec1 - dec0;
           const meanDecRad = ((dec0 + dec1) * 0.5) * DEG2RAD;
           const arcSpan = Math.max(Math.abs(dRa) * Math.max(0.15, Math.cos(meanDecRad)), Math.abs(dDec));
-          const steps = Math.max(1, Math.min(36, Math.ceil(arcSpan / 2.0)));
+          const steps = Math.max(1, Math.min(28, Math.ceil(arcSpan / 2.5)));
 
-          const pts = [];
+          // Precompute 3D Cartesian unit vectors (ux, uy, uz) for zero-trig projection
+          const pts3d = new Float32Array((steps + 1) * 3);
           for (let s = 0; s <= steps; s++) {
             const t = s / steps;
-            pts.push([
-              ((ra0 + dRa * t) % 360 + 360) % 360,
-              dec0 + dDec * t
-            ]);
+            const raRad = (((ra0 + dRa * t) % 360 + 360) % 360) * DEG2RAD;
+            const decRad = (dec0 + dDec * t) * DEG2RAD;
+            const cosD = Math.cos(decRad);
+            const idx = s * 3;
+            pts3d[idx] = cosD * Math.cos(raRad);
+            pts3d[idx + 1] = cosD * Math.sin(raRad);
+            pts3d[idx + 2] = Math.sin(decRad);
           }
-          segments.push(pts);
+          segments.push(pts3d);
         }
       }
     }
@@ -1018,12 +1037,41 @@ export class SkyRenderer {
     return segments;
   }
 
+  _getConstellationLines3D(list) {
+    if (this._cachedConLines3D && this._cachedConLinesRef === list) {
+      return this._cachedConLines3D;
+    }
+    const polylines = [];
+    for (const con of list) {
+      if (!con.lines) continue;
+      for (const poly of con.lines) {
+        const nVerts = Math.floor(poly.length / 2);
+        if (nVerts < 2) continue;
+        const pts3d = new Float32Array(nVerts * 3);
+        for (let i = 0; i < nVerts; i++) {
+          const raRad = poly[i * 2] * DEG2RAD;
+          const decRad = poly[i * 2 + 1] * DEG2RAD;
+          const cosD = Math.cos(decRad);
+          const idx = i * 3;
+          pts3d[idx] = cosD * Math.cos(raRad);
+          pts3d[idx + 1] = cosD * Math.sin(raRad);
+          pts3d[idx + 2] = Math.sin(decRad);
+        }
+        polylines.push(pts3d);
+      }
+    }
+    this._cachedConLinesRef = list;
+    this._cachedConLines3D = polylines;
+    return polylines;
+  }
+
   _renderConstellationBounds(ctx, state, projectRaDec, nightVision) {
     const list = state.catalogs.constellations;
     if (!Array.isArray(list)) return;
 
+    const { viewport } = this;
     const segments = this._getUniqueIauBoundarySegments(list);
-    const maxJump = Math.max(this.viewport.width, this.viewport.height) * 0.35;
+    const maxJump = Math.max(viewport.width, viewport.height) * 0.35;
 
     ctx.save();
     ctx.strokeStyle = nightVision ? 'rgba(195, 40, 28, 0.32)' : 'rgba(205, 148, 78, 0.26)';
@@ -1031,20 +1079,22 @@ export class SkyRenderer {
     ctx.setLineDash([4, 4]);
     ctx.beginPath();
 
-    for (const seg of segments) {
-      let prev = null;
-      for (let i = 0; i < seg.length; i++) {
-        const pt = seg[i];
-        const p = projectRaDec(pt[0], pt[1]);
+    for (let s = 0; s < segments.length; s++) {
+      const seg = segments[s];
+      let prevX = 0, prevY = 0, hasPrev = false;
+      for (let i = 0; i < seg.length; i += 3) {
+        const p = viewport.projectUnitVec(seg[i], seg[i + 1], seg[i + 2]);
         if (p.visible) {
-          if (prev && Math.hypot(p.x - prev.x, p.y - prev.y) < maxJump) {
+          if (hasPrev && Math.hypot(p.x - prevX, p.y - prevY) < maxJump) {
             ctx.lineTo(p.x, p.y);
           } else {
             ctx.moveTo(p.x, p.y);
           }
-          prev = p;
+          prevX = p.x;
+          prevY = p.y;
+          hasPrev = true;
         } else {
-          prev = null;
+          hasPrev = false;
         }
       }
     }
@@ -1056,34 +1106,36 @@ export class SkyRenderer {
     const list = state.catalogs.constellations;
     if (!Array.isArray(list)) return;
 
-    const maxJump = Math.max(this.viewport.width, this.viewport.height) * 0.42;
+    const { viewport } = this;
+    const polylines = this._getConstellationLines3D(list);
+    const maxJump = Math.max(viewport.width, viewport.height) * 0.42;
 
     ctx.save();
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
     ctx.beginPath();
 
-    for (const con of list) {
-      if (!con.lines) continue;
-      for (const poly of con.lines) {
-        let prev = null;
-        for (let i = 0; i < poly.length; i += 2) {
-          const p = projectRaDec(poly[i], poly[i + 1]);
-          if (p.visible) {
-            if (prev && Math.hypot(p.x - prev.x, p.y - prev.y) < maxJump) {
-              ctx.lineTo(p.x, p.y);
-            } else {
-              ctx.moveTo(p.x, p.y);
-            }
-            prev = p;
+    for (let pIdx = 0; pIdx < polylines.length; pIdx++) {
+      const poly = polylines[pIdx];
+      let prevX = 0, prevY = 0, hasPrev = false;
+      for (let i = 0; i < poly.length; i += 3) {
+        const p = viewport.projectUnitVec(poly[i], poly[i + 1], poly[i + 2]);
+        if (p.visible) {
+          if (hasPrev && Math.hypot(p.x - prevX, p.y - prevY) < maxJump) {
+            ctx.lineTo(p.x, p.y);
           } else {
-            prev = null;
+            ctx.moveTo(p.x, p.y);
           }
+          prevX = p.x;
+          prevY = p.y;
+          hasPrev = true;
+        } else {
+          hasPrev = false;
         }
       }
     }
 
-    // Pass 1: Soft outer luminous glow (Astro2001 style)
+    // Pass 1: Soft outer luminous glow (pure vector stroke, no costly shadowBlur!)
     ctx.strokeStyle = nightVision
       ? 'rgba(220, 35, 25, 0.14)'
       : isAlmanach
@@ -1140,6 +1192,36 @@ export class SkyRenderer {
   }
 
   /**
+   * Build precomputed 3D unit vectors (ux, uy, uz) and photo index list for all 15,618 OpenNGC objects once
+   */
+  _ensureDsoUnitVectors(rows) {
+    if (this._dsoUnitVecs && this._dsoRowsRef === rows) {
+      return;
+    }
+    const n = rows.length;
+    const uVecs = new Float32Array(n * 3);
+    const photoIndices = [];
+
+    for (let i = 0; i < n; i++) {
+      const r = rows[i];
+      const raRad = (r[4] || 0) * DEG2RAD;
+      const decRad = (r[5] || 0) * DEG2RAD;
+      const cosD = Math.cos(decRad);
+      const off = i * 3;
+      uVecs[off] = cosD * Math.cos(raRad);
+      uVecs[off + 1] = cosD * Math.sin(raRad);
+      uVecs[off + 2] = Math.sin(decRad);
+      if (r[13]) {
+        photoIndices.push(i);
+      }
+    }
+
+    this._dsoRowsRef = rows;
+    this._dsoUnitVecs = uVecs;
+    this._dsoPhotoIndices = photoIndices;
+  }
+
+  /**
    * 2b. Embedded DSO Photos Layer (rendered beneath stars so stars remain sharp on top of nebulae)
    */
   _renderDsoPhotosLayer(ctx, state, projectRaDec, nightVision) {
@@ -1148,26 +1230,33 @@ export class SkyRenderer {
 
     const { viewport } = this;
     const rows = dsoCatalog.rows;
+    this._ensureDsoUnitVectors(rows);
+
     const fov = viewport.fov;
     const degToPx = Math.min(viewport.width, viewport.height) / fov;
+    const photoIndices = this._dsoPhotoIndices;
+    const uVecs = this._dsoUnitVecs;
 
-    for (let i = 0; i < rows.length; i++) {
+    // Only iterate over the 135 objects that actually have a photo (instead of all 15,618 rows!)
+    for (let k = 0; k < photoIndices.length; k++) {
+      const i = photoIndices[k];
       const row = rows[i];
-      if (!row[13]) continue; // Only the 135 objects with an embedded photo
-      const ra = row[4];
-      const dec = row[5];
-      const p = projectRaDec(ra, dec);
-      if (!p.visible) continue;
-      if (viewport.viewMode === 'terrestrial' && state.toggles.ground && p.alt < -2) continue;
-
       const majArcmin = row[8] || 8;
-      const minArcmin = row[9] || majArcmin;
-      const paDeg = row[10] ?? 0;
       const approxRadiusPx = (majArcmin / 60) * degToPx * 0.5;
       if (approxRadiusPx < 4.5) continue;
 
+      const uOff = i * 3;
+      const p = viewport.projectUnitVec(uVecs[uOff], uVecs[uOff + 1], uVecs[uOff + 2]);
+      if (!p.visible) continue;
+      if (viewport.viewMode === 'terrestrial' && state.toggles.ground && p.sinAlt < -0.035) continue;
+
       const photoEntry = this._getDsoPhoto(row[13]);
       if (!photoEntry || !photoEntry.loaded || !photoEntry.img) continue;
+
+      const ra = row[4];
+      const dec = row[5];
+      const minArcmin = row[9] || majArcmin;
+      const paDeg = row[10] ?? 0;
 
       const stepDeg = 0.08;
       const stepArcmin = stepDeg * 60;
@@ -1223,7 +1312,16 @@ export class SkyRenderer {
 
     const { viewport } = this;
     const rows = dsoCatalog.rows;
+    this._ensureDsoUnitVectors(rows);
+    const uVecs = this._dsoUnitVecs;
+    const camZ = viewport.camZ;
+    const horZ = viewport.horZ;
     const fov = viewport.fov;
+    const clipGround = viewport.viewMode === 'terrestrial' && state.toggles.ground;
+
+    // Fast frustum cone threshold cos(theta_max)
+    const maxConeRad = Math.min(Math.PI * 0.95, fov * DEG2RAD * 1.15);
+    const minCosC = fov < 135 ? Math.cos(maxConeRad) : -0.95;
 
     // Adaptive limiting magnitude for DSOs
     let maxMag = 7.5;
@@ -1258,11 +1356,20 @@ export class SkyRenderer {
 
       if (!isMessier && !isNamedIconic && mag > effMaxMag) continue;
 
+      // 3-multiply dot-product frustum culling BEFORE full projection
+      const uOff = i * 3;
+      const ux = uVecs[uOff];
+      const uy = uVecs[uOff + 1];
+      const uz = uVecs[uOff + 2];
+      const cosC = camZ[0] * ux + camZ[1] * uy + camZ[2] * uz;
+      if (cosC < minCosC) continue;
+      if (clipGround && (horZ[0] * ux + horZ[1] * uy + horZ[2] * uz) < -0.02) continue;
+
+      const p = viewport.projectUnitVec(ux, uy, uz);
+      if (!p.visible) continue;
+
       const ra = row[4];
       const dec = row[5];
-      const p = projectRaDec(ra, dec);
-      if (!p.visible) continue;
-      if (viewport.viewMode === 'terrestrial' && state.toggles.ground && p.alt < -1) continue;
 
       // Avoid drawing dozens of overlapping minor NGC/IC symbols on the exact same pixel cell
       const cellKey = `${Math.floor(p.x / symbolCellSize)},${Math.floor(p.y / symbolCellSize)}`;
@@ -1494,13 +1601,12 @@ export class SkyRenderer {
 
   /**
    * 5. Stars (871,136 ATHYG v3.2 sorted by magnitude in stars.bin)
-   *    Includes Astro2001-style delicate WDS horizontal side-ticks (—•—) and thin GCVS variable rings.
+   *    Rendered on GPU via WebGLSkyAccelerator + 3D unit-vector frustum culling for WDS/GCVS/labels/targets.
    */
-  _renderStars(ctx, state, projectRaDec, nightVision) {
+  _renderStars(ctx, state, projectRaDec, nightVision, isAlmanach) {
     const starsView = state.catalogs.starsBin;
     if (!starsView) return;
 
-    const totalStars = Math.floor(starsView.byteLength / 8);
     const { viewport } = this;
     const fov = viewport.fov;
 
@@ -1517,7 +1623,20 @@ export class SkyRenderer {
     }
     this.lastLimitMag = limitMag;
 
-    const limitMagI16 = Math.round(limitMag * 1000);
+    // Upload all 871,136 stars once to GPU VBO & build Float32Array of 3D unit vectors
+    this.webglSky.ensureStarsUploaded(starsView);
+    const gpuRendered = this.webglSky.renderStars(ctx, viewport, state, limitMag, nightVision, isAlmanach);
+
+    const starCount = this.webglSky.getStarCountForLimitMag(limitMag);
+    const uVecs = this.webglSky.starUnitVectors;
+    const camZ = viewport.camZ;
+    const horZ = viewport.horZ;
+    const clipGround = viewport.viewMode === 'terrestrial' && state.toggles.ground;
+
+    // Fast frustum cone threshold cos(theta_max)
+    const maxConeRad = Math.min(Math.PI * 0.95, fov * DEG2RAD * 1.12);
+    const minCosC = fov < 135 ? Math.cos(maxConeRad) : -0.95;
+
     const meta = state.catalogs.starMeta || {};
     const namesMap = meta.names || {};
     const wdsMap = meta.wds || {};
@@ -1532,51 +1651,57 @@ export class SkyRenderer {
 
     ctx.save();
 
-    for (let i = 0; i < totalStars; i++) {
-      const offset = i * 8;
-      const magI16 = starsView.getInt16(offset + 4, true);
-      if (magI16 > limitMagI16) break;
-
-      const raU16 = starsView.getUint16(offset, true);
-      const decI16 = starsView.getInt16(offset + 2, true);
-      const bvI8 = starsView.getInt8(offset + 6);
-      const conIdx = starsView.getUint8(offset + 7);
-
-      const ra = (raU16 / 65535) * 360;
-      const dec = (decI16 / 32767) * 90;
-
-      const p = projectRaDec(ra, dec);
-      if (!p.visible) continue;
-      if (viewport.viewMode === 'terrestrial' && state.toggles.ground && p.alt < -1) continue;
-
-      const mag = magI16 / 1000;
-      const bv = bvI8 / 50;
-
-      // Refined Uranometria / Astro2001 star disk sizing & luminance curve
-      const magDiff = limitMag - mag;
-      const radius = Math.max(0.55, Math.min(5.2, 0.58 + Math.pow(Math.max(0, 6.2 - mag), 1.28) * 0.38));
-      const alpha = Math.max(0.16, Math.min(1.0, magDiff * 0.46));
-      const color = bvToRgb(bv, nightVision);
-
-      // Soft atmospheric glow around bright stars (mag < 3.4)
-      if (mag < 3.4) {
-        const haloR = radius * (mag < 1.5 ? 3.8 : 2.6);
-        const grad = ctx.createRadialGradient(p.x, p.y, radius * 0.35, p.x, p.y, haloR);
-        grad.addColorStop(0, nightVision ? 'rgba(255, 75, 55, 0.42)' : 'rgba(235, 244, 255, 0.36)');
-        grad.addColorStop(1, 'rgba(255, 255, 255, 0)');
-        ctx.globalAlpha = Math.min(1, alpha);
-        ctx.fillStyle = grad;
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, haloR, 0, Math.PI * 2);
-        ctx.fill();
+    for (let i = 0; i < starCount; i++) {
+      // When GPU rendered the starfield and FOV >= 20°, faint unannotated stars (mag > 5.2, index >= 2200)
+      // need neither CPU drawing nor label/target registration
+      if (gpuRendered && fov >= 20 && i >= 2200 && !namesMap[i] && !(showDoubles && wdsMap[i]) && !(showVariables && gcvsMap[i])) {
+        continue;
       }
 
-      // Crisp star core
-      ctx.globalAlpha = alpha;
-      ctx.fillStyle = color;
-      ctx.beginPath();
-      ctx.arc(p.x, p.y, radius, 0, Math.PI * 2);
-      ctx.fill();
+      // 3-multiply dot-product frustum culling BEFORE any byte-unpacking or projection!
+      const uOff = i * 3;
+      const ux = uVecs[uOff];
+      const uy = uVecs[uOff + 1];
+      const uz = uVecs[uOff + 2];
+      const cosC = camZ[0] * ux + camZ[1] * uy + camZ[2] * uz;
+      if (cosC < minCosC) continue;
+      if (clipGround && (horZ[0] * ux + horZ[1] * uy + horZ[2] * uz) < -0.02) continue;
+
+      const p = viewport.projectUnitVec(ux, uy, uz);
+      if (!p.visible) continue;
+
+      const offset = i * 8;
+      const magI16 = starsView.getInt16(offset + 4, true);
+      const bvI8 = starsView.getInt8(offset + 6);
+      const mag = magI16 * 0.001;
+      const bv = bvI8 * 0.02;
+
+      const radius = Math.max(0.55, Math.min(5.2, 0.58 + Math.pow(Math.max(0, 6.2 - mag), 1.28) * 0.38));
+
+      // Fallback CPU star drawing only if WebGL is unavailable
+      if (!gpuRendered) {
+        const magDiff = limitMag - mag;
+        const alpha = Math.max(0.16, Math.min(1.0, magDiff * 0.46));
+        const color = bvToRgb(bv, nightVision);
+
+        if (mag < 3.4) {
+          const haloR = radius * (mag < 1.5 ? 3.8 : 2.6);
+          const grad = ctx.createRadialGradient(p.x, p.y, radius * 0.35, p.x, p.y, haloR);
+          grad.addColorStop(0, nightVision ? 'rgba(255, 75, 55, 0.42)' : 'rgba(235, 244, 255, 0.36)');
+          grad.addColorStop(1, 'rgba(255, 255, 255, 0)');
+          ctx.globalAlpha = Math.min(1, alpha);
+          ctx.fillStyle = grad;
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, haloR, 0, Math.PI * 2);
+          ctx.fill();
+        }
+
+        ctx.globalAlpha = alpha;
+        ctx.fillStyle = color;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, radius, 0, Math.PI * 2);
+        ctx.fill();
+      }
 
       // Reserve obstacle box for bright stars so no label is drawn right on top of a bright star disk
       if (mag < 3.8) {
@@ -1653,13 +1778,16 @@ export class SkyRenderer {
 
       // Register clickable target for bright or zoomed stars
       if (mag < 5.2 || fov < 20 || nameEntry || wdsMap[i] || gcvsMap[i]) {
+        const raU16 = starsView.getUint16(offset, true);
+        const decI16 = starsView.getInt16(offset + 2, true);
+        const conIdx = starsView.getUint8(offset + 7);
         this.screenTargets.push({
           type: 'star',
           starIdx: i,
           id: `STAR:${i}`,
           name: nameEntry ? (Array.isArray(nameEntry) ? nameEntry[0] : nameEntry) : `HD ${100000 + i}`,
-          ra,
-          dec,
+          ra: (raU16 / 65535) * 360,
+          dec: (decI16 / 32767) * 90,
           mag,
           bv,
           conIdx,

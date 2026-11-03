@@ -19,7 +19,7 @@ import {
   getShortcutMap,
   normalizeShortcutKey,
   getDefaultToggleState
-} from './features.js?v=10';
+} from './features.js?v=11';
 
 import {
   initI18n,
@@ -28,7 +28,7 @@ import {
   t,
   getConstellationName,
   applyDomTranslations
-} from './i18n.js?v=10';
+} from './i18n.js?v=11';
 
 import {
   dateToJD,
@@ -43,7 +43,7 @@ import {
   bvToTemperatureK,
   computeStellarRadiusSolar,
   formatAltitudeWithFists
-} from './astro/time.js?v=10';
+} from './astro/time.js?v=11';
 
 import {
   computeSolarSystem,
@@ -51,14 +51,14 @@ import {
   getPlanetMoons,
   computeAsteroids,
   DEFAULT_ASTEROIDS
-} from './astro/solar-system.js?v=10';
+} from './astro/solar-system.js?v=11';
 
 import {
   computeAllSatellites,
   predictSatellitePasses,
   fetchCelestrakTLEs,
   DEFAULT_SATELLITES
-} from './astro/sgp4.js?v=10';
+} from './astro/sgp4.js?v=11';
 
 import {
   computeRiseTransitSet,
@@ -66,13 +66,13 @@ import {
   computeMeteorShowers,
   computeEventsCalendar,
   DEFAULT_METEOR_SHOWERS
-} from './astro/events.js?v=10';
+} from './astro/events.js?v=11';
 
-import { SkyViewport } from './render/projection.js?v=10';
-import { SkyRenderer, LUNAR_FEATURES } from './render/sky-renderer.js?v=10';
-import { ObjectCardUI } from './ui/object-card.js?v=10';
-import { PanelsUI } from './ui/panels.js?v=10';
-import { CommandPaletteUI } from './ui/command-palette.js?v=10';
+import { SkyViewport } from './render/projection.js?v=11';
+import { SkyRenderer, LUNAR_FEATURES } from './render/sky-renderer.js?v=11';
+import { ObjectCardUI } from './ui/object-card.js?v=11';
+import { PanelsUI } from './ui/panels.js?v=11';
+import { CommandPaletteUI } from './ui/command-palette.js?v=11';
 
 const COMPASS_DIRS = ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 'S', 'SSO', 'SO', 'OSO', 'O', 'ONO', 'NO', 'NNO'];
 
@@ -346,14 +346,33 @@ export class PlanetariumApp {
     const dtSec = Math.min(0.25, (now - this._lastFrameTime) / 1000);
     this._lastFrameTime = now;
 
+    // Smooth inertial panning decay when user releases drag with velocity
+    if (this._panInertia && (Math.abs(this._panInertia.vx) > 0.15 || Math.abs(this._panInertia.vy) > 0.15)) {
+      this.viewport.panByPixels(this._panInertia.vx, this._panInertia.vy);
+      const decay = Math.pow(0.88, dtSec * 60);
+      this._panInertia.vx *= decay;
+      this._panInertia.vy *= decay;
+      this._needsRender = true;
+    }
+
     if (this.state.isPlaying) {
       const deltaSimMs = dtSec * 1000 * this.state.timeSpeed * this.state.timeDirection;
       this.state.date = new Date(this.state.date.getTime() + deltaSimMs);
-      const forceFull = Math.abs(this.state.timeSpeed) > 10 || (now - this._lastSatUpdateMs > 900);
-      this._updateEphemerides(forceFull);
-      if (forceFull) this._lastSatUpdateMs = now;
-      this._updateHudLabels();
-      this._needsRender = true;
+
+      const isFastSim = Math.abs(this.state.timeSpeed) > 2;
+      const elapsedSinceEphem = now - (this._lastRealTimeEphemMs || 0);
+      // At 1x real-time speed, only recompute ephemerides & DOM clock ~4 times/sec (and skip during active drag)
+      if (isFastSim || (!this._isInteractingCanvas && elapsedSinceEphem >= 250)) {
+        this._lastRealTimeEphemMs = now;
+        const forceFull = Math.abs(this.state.timeSpeed) > 10 || (now - this._lastSatUpdateMs > 900);
+        this._updateEphemerides(forceFull);
+        if (forceFull) this._lastSatUpdateMs = now;
+        if (!isFastSim || (now - (this._lastHudDomMs || 0) >= 65)) {
+          this._lastHudDomMs = now;
+          this._updateHudLabels();
+        }
+        this._needsRender = true;
+      }
     }
 
     if (this._needsRender) {
@@ -666,22 +685,25 @@ export class PlanetariumApp {
     const lstEl = document.getElementById('lstVal');
 
     try {
-      const timeFmt = new Intl.DateTimeFormat(this.state.lang, {
-        timeZone: obs.tz || 'UTC',
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit',
-        hour12: false
-      });
-      if (clockEl) clockEl.textContent = timeFmt.format(this.state.date);
-
-      const dateFmt = new Intl.DateTimeFormat(this.state.lang, {
-        timeZone: obs.tz || 'UTC',
-        day: '2-digit',
-        month: 'short',
-        year: 'numeric'
-      });
-      if (dateEl) dateEl.textContent = dateFmt.format(this.state.date);
+      const tzKey = `${this.state.lang}|${obs.tz || 'UTC'}`;
+      if (this._fmtCacheKey !== tzKey) {
+        this._fmtCacheKey = tzKey;
+        this._cachedTimeFmt = new Intl.DateTimeFormat(this.state.lang, {
+          timeZone: obs.tz || 'UTC',
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit',
+          hour12: false
+        });
+        this._cachedDateFmt = new Intl.DateTimeFormat(this.state.lang, {
+          timeZone: obs.tz || 'UTC',
+          day: '2-digit',
+          month: 'short',
+          year: 'numeric'
+        });
+      }
+      if (clockEl) clockEl.textContent = this._cachedTimeFmt.format(this.state.date);
+      if (dateEl) dateEl.textContent = this._cachedDateFmt.format(this.state.date);
     } catch (_) {
       const iso = this.state.date.toISOString();
       if (clockEl) clockEl.textContent = iso.slice(11, 19);
@@ -1006,45 +1028,87 @@ export class PlanetariumApp {
 
   _bindCanvasInteraction() {
     let isDragging = false;
+    let hasMovedBeyondTap = false;
     let startX = 0, startY = 0;
     let lastX = 0, lastY = 0;
+    let lastMoveTime = 0;
+    let velX = 0, velY = 0;
 
     this.canvas.addEventListener('pointerdown', (e) => {
       isDragging = true;
+      hasMovedBeyondTap = false;
+      this._isInteractingCanvas = true;
+      this._panInertia = null;
+      velX = 0;
+      velY = 0;
       startX = lastX = e.clientX;
       startY = lastY = e.clientY;
+      lastMoveTime = performance.now();
       this.canvas.setPointerCapture(e.pointerId);
     });
 
     this.canvas.addEventListener('pointermove', (e) => {
       if (!isDragging) return;
+      const now = performance.now();
       const dx = e.clientX - lastX;
       const dy = e.clientY - lastY;
+
+      if (!hasMovedBeyondTap) {
+        if (Math.hypot(e.clientX - startX, e.clientY - startY) < 2.5) {
+          return;
+        }
+        hasMovedBeyondTap = true;
+      }
+
       lastX = e.clientX;
       lastY = e.clientY;
-      if (Math.hypot(dx, dy) > 1.5) {
+      if (dx !== 0 || dy !== 0) {
+        const dt = Math.max(4, now - lastMoveTime);
+        const instVx = (dx / dt) * 16.0;
+        const instVy = (dy / dt) * 16.0;
+        velX = velX * 0.45 + instVx * 0.55;
+        velY = velY * 0.45 + instVy * 0.55;
+        lastMoveTime = now;
+
         this.state.trackedObjectId = null;
         this.viewport.panByPixels(dx, dy);
         this.requestRender();
       }
     });
 
-    this.canvas.addEventListener('pointerup', (e) => {
+    const finishDrag = (e) => {
       if (!isDragging) return;
       isDragging = false;
+      this._isInteractingCanvas = false;
       const moved = Math.hypot(e.clientX - startX, e.clientY - startY);
-      if (moved < 5) {
+      if (!hasMovedBeyondTap && moved < 5) {
         const picked = this.renderer.pickObjectAt(e.clientX, e.clientY);
         if (picked) {
           this.selectObject(picked);
         }
+      } else if (performance.now() - lastMoveTime < 75 && Math.hypot(velX, velY) > 1.2) {
+        this._panInertia = {
+          vx: Math.max(-48, Math.min(48, velX)),
+          vy: Math.max(-48, Math.min(48, velY))
+        };
       }
-    });
+    };
+
+    this.canvas.addEventListener('pointerup', finishDrag);
+    this.canvas.addEventListener('pointercancel', finishDrag);
 
     this.canvas.addEventListener('wheel', (e) => {
       e.preventDefault();
-      const factor = e.deltaY > 0 ? 1.12 : 0.89;
-      this.viewport.zoomAtCursor(factor, e.clientX, e.clientY);
+      this._panInertia = null;
+      // Continuous proportional zoom for both macOS trackpad gestures (small deltaY) and mouse wheels
+      const rawDelta = e.deltaMode === 1 ? e.deltaY * 18 : e.deltaY;
+      const clampedDelta = Math.max(-75, Math.min(75, rawDelta));
+      const factor = Math.exp(clampedDelta * 0.0022);
+      if (this.state.trackedObjectId && this.viewport.viewMode !== 'solarsystem') {
+        this.viewport.setFov(this.viewport.fov * factor);
+      } else {
+        this.viewport.zoomAtCursor(factor, e.clientX, e.clientY);
+      }
       this._updateFovChip();
       this.requestRender();
     }, { passive: false });
