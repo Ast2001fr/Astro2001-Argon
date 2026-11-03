@@ -168,9 +168,6 @@ def render_dso_png(filepath, dso_type, maj, min_ax, pa_deg, seed_val):
     raw = bytearray(H * (1 + W * 3))
 
     cx, cy = W * 0.5, H * 0.5
-    pa_rad = math.radians(pa_deg)
-    cos_pa = math.cos(pa_rad)
-    sin_pa = math.sin(pa_rad)
     aspect = max(0.22, min(1.0, min_ax / max(0.1, maj)))
 
     # Color palette based on DSO morphological type
@@ -191,19 +188,19 @@ def render_dso_png(filepath, dso_type, maj, min_ax, pa_deg, seed_val):
         cr, cg, cb = 255, 225, 165
         or_, og, ob = 210, 185, 150
     else:
-        # Galaxy ("G", "RN"): warm golden bulge + blue spiral disk
-        cr, cg, cb = 255, 220, 160
-        or_, og, ob = 135, 175, 245
+        # Galaxy ("G", "RN"): warm golden-cream bulge + soft silver-blue spiral disk
+        cr, cg, cb = 255, 224, 172
+        or_, og, ob = 148, 182, 238
 
-    # Pre-generate star field for clusters
+    # Pre-generate star field for clusters (canonical circular frame; sky-renderer scales maj/min & rotates by PA)
     stars = []
-    num_stars = 90 if dso_type == "GCl" else (48 if dso_type == "OCl" else 14)
+    num_stars = 90 if dso_type == "GCl" else (48 if dso_type == "OCl" else 10)
     for _ in range(num_stars):
         rad = (rng.random() ** (1.7 if dso_type == "GCl" else 0.9)) * 46.0
         ang = rng.random() * 2.0 * math.pi
         sx = cx + rad * math.cos(ang)
-        sy = cy + rad * math.sin(ang) * (aspect if dso_type == "G" else 1.0)
-        sbright = rng.uniform(0.45, 1.0)
+        sy = cy + rad * math.sin(ang)
+        sbright = rng.uniform(0.35, 0.9)
         scol = rng.choice([(255, 235, 190), (185, 215, 255), (255, 195, 145)])
         stars.append((sx, sy, sbright, scol))
 
@@ -214,9 +211,9 @@ def render_dso_png(filepath, dso_type, maj, min_ax, pa_deg, seed_val):
         dy = y - cy
         for x in range(W):
             dx = x - cx
-            # Rotate into object frame
-            rx = (dx * cos_pa + dy * sin_pa) / 48.0
-            ry = (-dx * sin_pa + dy * cos_pa) / (48.0 * aspect)
+            # Canonical unrotated normalized frame (r=1.0 corresponds to semi-axis = 52 px)
+            rx = dx / 52.0
+            ry = dy / 52.0
             r2 = rx * rx + ry * ry
             r = math.sqrt(r2)
 
@@ -224,7 +221,7 @@ def render_dso_png(filepath, dso_type, maj, min_ax, pa_deg, seed_val):
                 # Pure black outer margin for clean additive blending
                 continue
 
-            edge_fade = max(0.0, 1.0 - (r / 1.12) ** 2.2)
+            edge_fade = max(0.0, 1.0 - (r / 1.14) ** 2.2)
 
             if dso_type == "PN":
                 # Ring + central glow
@@ -234,18 +231,20 @@ def render_dso_png(filepath, dso_type, maj, min_ax, pa_deg, seed_val):
                 g_val = (core * cg + ring * og) * edge_fade
                 b_val = (core * cb + ring * ob) * edge_fade
             elif dso_type == "G":
-                # Bulge + 2 logarithmic spiral arms
-                bulge = math.exp(-(r / 0.26) ** 1.6)
+                # Smooth Sérsic/de Vaucouleurs warm bulge + 2 logarithmic spiral arms
+                bulge = math.exp(-(r / 0.24) ** 1.45)
                 theta = math.atan2(ry, rx)
-                arm_phase = math.cos(2.0 * (theta - 2.6 * math.log(max(0.08, r))))
-                disk = math.exp(-(r / 0.72) ** 1.8) * (0.45 + 0.55 * max(0.0, arm_phase))
-                # Dust lane if edge-on
+                arm_phase = math.cos(2.0 * (theta - 2.4 * math.log(max(0.08, r))))
+                disk = math.exp(-(r / 0.74) ** 1.75) * (0.55 + 0.45 * max(0.0, arm_phase))
+                # Subtle spiral dust lane on the near flank (preserving bright nucleus)
                 dust = 1.0
-                if aspect < 0.38 and abs(ry) < 0.09:
-                    dust = 0.28
-                r_val = (bulge * cr + disk * or_ * 0.75) * dust * edge_fade
-                g_val = (bulge * cg + disk * og * 0.75) * dust * edge_fade
-                b_val = (bulge * cb + disk * ob * 0.75) * dust * edge_fade
+                if aspect < 0.24 and r > 0.12 and abs(ry - 0.05) < 0.07:
+                    dust = 0.55
+                elif aspect < 0.45 and 0.28 < r < 0.72 and ry > 0.08:
+                    dust = 1.0 - 0.22 * math.sin((r - 0.28) * 14.0) ** 2
+                r_val = (bulge * cr + disk * or_ * 0.78) * dust * edge_fade
+                g_val = (bulge * cg + disk * og * 0.78) * dust * edge_fade
+                b_val = (bulge * cb + disk * ob * 0.78) * dust * edge_fade
             elif dso_type in ("HII", "SNR", "DN"):
                 # Multi-lobed emission nebula with filament modulation
                 theta = math.atan2(ry, rx)

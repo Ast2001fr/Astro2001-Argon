@@ -7,8 +7,8 @@
  * 4) Solar System View (3D orbitable heliocentric system with planets & 8 asteroids)
  */
 
-import { PlanetShaderRenderer } from './planet-shader.js?v=4';
-import { MilkyWayAndHipsRenderer } from './milkyway-hips.js?v=4';
+import { PlanetShaderRenderer } from './planet-shader.js?v=8';
+import { MilkyWayAndHipsRenderer } from './milkyway-hips.js?v=8';
 
 const DEG2RAD = Math.PI / 180;
 const RAD2DEG = 180 / Math.PI;
@@ -96,7 +96,7 @@ export class SkyRenderer {
       entry.img = img;
       if (this._onAssetLoaded) this._onAssetLoaded();
     };
-    img.src = `assets/dso/${photoFilename}`;
+    img.src = `assets/dso/${photoFilename}?v=8`;
     return entry;
   }
 
@@ -581,25 +581,80 @@ export class SkyRenderer {
   /**
    * 4. Constellations: Official IAU Boundaries, Lines, and Translated Names
    */
+  _getUniqueIauBoundarySegments(list) {
+    if (this._cachedIauSegments && this._cachedIauListRef === list) {
+      return this._cachedIauSegments;
+    }
+    const edgeSet = new Set();
+    const segments = [];
+
+    for (const con of list) {
+      const rings = Array.isArray(con.boundRings) && con.boundRings.length > 0
+        ? con.boundRings
+        : (Array.isArray(con.bounds) && con.bounds.length >= 3 ? [con.bounds] : []);
+
+      for (const ring of rings) {
+        if (!ring || ring.length < 2) continue;
+        for (let i = 0; i < ring.length; i++) {
+          const a = ring[i];
+          const b = ring[(i + 1) % ring.length];
+          const ka = `${Math.round(a[0] * 100)},${Math.round(a[1] * 100)}`;
+          const kb = `${Math.round(b[0] * 100)},${Math.round(b[1] * 100)}`;
+          if (ka === kb) continue;
+
+          const p0 = ka < kb ? a : b;
+          const p1 = ka < kb ? b : a;
+          const edgeKey = ka < kb ? `${ka}|${kb}` : `${kb}|${ka}`;
+          if (edgeSet.has(edgeKey)) continue;
+          edgeSet.add(edgeKey);
+
+          const ra0 = p0[0];
+          const dec0 = p0[1];
+          const dec1 = p1[1];
+          const dRa = ((p1[0] - ra0 + 540) % 360) - 180;
+          const dDec = dec1 - dec0;
+          const meanDecRad = ((dec0 + dec1) * 0.5) * DEG2RAD;
+          const arcSpan = Math.max(Math.abs(dRa) * Math.max(0.15, Math.cos(meanDecRad)), Math.abs(dDec));
+          const steps = Math.max(1, Math.min(36, Math.ceil(arcSpan / 2.0)));
+
+          const pts = [];
+          for (let s = 0; s <= steps; s++) {
+            const t = s / steps;
+            pts.push([
+              ((ra0 + dRa * t) % 360 + 360) % 360,
+              dec0 + dDec * t
+            ]);
+          }
+          segments.push(pts);
+        }
+      }
+    }
+
+    this._cachedIauListRef = list;
+    this._cachedIauSegments = segments;
+    return segments;
+  }
+
   _renderConstellationBounds(ctx, state, projectRaDec, nightVision) {
     const list = state.catalogs.constellations;
     if (!Array.isArray(list)) return;
 
-    ctx.save();
-    ctx.strokeStyle = nightVision ? 'rgba(190, 35, 25, 0.32)' : 'rgba(210, 145, 70, 0.28)';
-    ctx.lineWidth = 1;
-    ctx.setLineDash([4, 4]);
+    const segments = this._getUniqueIauBoundarySegments(list);
+    const maxJump = Math.max(this.viewport.width, this.viewport.height) * 0.35;
 
-    for (const con of list) {
-      const bounds = con.bounds;
-      if (!bounds || bounds.length < 3) continue;
-      ctx.beginPath();
+    ctx.save();
+    ctx.strokeStyle = nightVision ? 'rgba(205, 42, 30, 0.36)' : 'rgba(210, 150, 75, 0.30)';
+    ctx.lineWidth = 1.0;
+    ctx.setLineDash([5, 4]);
+    ctx.beginPath();
+
+    for (const seg of segments) {
       let prev = null;
-      for (let i = 0; i <= bounds.length; i++) {
-        const pt = bounds[i % bounds.length];
+      for (let i = 0; i < seg.length; i++) {
+        const pt = seg[i];
         const p = projectRaDec(pt[0], pt[1]);
         if (p.visible) {
-          if (prev && Math.hypot(p.x - prev.x, p.y - prev.y) < this.viewport.width * 0.45) {
+          if (prev && Math.hypot(p.x - prev.x, p.y - prev.y) < maxJump) {
             ctx.lineTo(p.x, p.y);
           } else {
             ctx.moveTo(p.x, p.y);
@@ -609,8 +664,8 @@ export class SkyRenderer {
           prev = null;
         }
       }
-      ctx.stroke();
     }
+    ctx.stroke();
     ctx.restore();
   }
 
@@ -676,6 +731,7 @@ export class SkyRenderer {
 
   /**
    * 5. Deep Sky Objects (15,618 OpenNGC + 135 Real Photos in Additive Blend)
+   *    Photos are mutually exclusive with HiPS DSS2 and oriented by true astronomical PA (East of Celestial North).
    */
   _renderDeepSkyObjects(ctx, state, projectRaDec, nightVision) {
     const dsoCatalog = state.catalogs.openngc;
@@ -693,7 +749,8 @@ export class SkyRenderer {
     if (fov < 0.8) maxMag = 18.0;
 
     const degToPx = Math.min(viewport.width, viewport.height) / fov;
-    const showPhotos = !!state.toggles.dsoPhotos;
+    // Embedded DSO photos are mutually exclusive with the online HiPS DSS2 survey
+    const showPhotos = !!state.toggles.dsoPhotos && !state.toggles.dssHips;
 
     ctx.save();
     ctx.font = '10px system-ui, -apple-system, sans-serif';
@@ -715,25 +772,65 @@ export class SkyRenderer {
 
       const majArcmin = row[8] || 4;
       const minArcmin = row[9] || majArcmin;
-      const paDeg = row[10] || 0;
-      const radiusPx = Math.max(4, (majArcmin / 60) * degToPx * 0.5);
+      const paDeg = row[10] ?? 0;
+      const approxRadiusPx = Math.max(4, (majArcmin / 60) * degToPx * 0.5);
 
-      // 135 Real Photos mapped in additive blending ('lighter' / 'screen')
-      if (showPhotos && hasPhoto && radiusPx >= 5) {
+      // Compute exact local Celestial North (+Dec) and Celestial East (+RA) screen vectors per arcminute
+      let majVecX = degToPx / 60;
+      let majVecY = 0;
+      let minVecX = 0;
+      let minVecY = degToPx / 60;
+
+      if ((showPhotos && hasPhoto && approxRadiusPx >= 5) || isMessier || mag <= maxMag - 0.5 || fov < 15) {
+        const stepDeg = 0.08; // 4.8 arcmin step on sky
+        const stepArcmin = stepDeg * 60;
+        const signN = dec <= 89.5 ? 1 : -1;
+        const pN = projectRaDec(ra, dec + signN * stepDeg);
+        const cosDec = Math.max(0.05, Math.cos(dec * DEG2RAD));
+        const pE = projectRaDec((ra + stepDeg / cosDec) % 360, dec);
+
+        if (pN.visible && pE.visible) {
+          const nX = ((pN.x - p.x) * signN) / stepArcmin;
+          const nY = ((pN.y - p.y) * signN) / stepArcmin;
+          const eX = (pE.x - p.x) / stepArcmin;
+          const eY = (pE.y - p.y) / stepArcmin;
+
+          // Position Angle PA is measured in degrees from Celestial North (+Dec) toward Celestial East (+RA)
+          const paRad = paDeg * DEG2RAD;
+          const cosPA = Math.cos(paRad);
+          const sinPA = Math.sin(paRad);
+          majVecX = cosPA * nX + sinPA * eX;
+          majVecY = cosPA * nY + sinPA * eY;
+          minVecX = -sinPA * nX + cosPA * eX;
+          minVecY = -sinPA * nY + cosPA * eY;
+        }
+      }
+
+      const semiMajPx = Math.max(4.5, Math.hypot(majVecX, majVecY) * majArcmin * 0.5);
+      const semiMinPx = Math.max(2.5, Math.hypot(minVecX, minVecY) * minArcmin * 0.5);
+
+      // 135 Embedded Photos mapped in additive blending ('screen') with true sky size & PA orientation
+      if (showPhotos && hasPhoto && semiMajPx >= 5) {
         const photoEntry = this._getDsoPhoto(row[13]);
         if (photoEntry && photoEntry.loaded && photoEntry.img) {
           ctx.save();
           ctx.globalCompositeOperation = 'screen';
-          ctx.translate(p.x, p.y);
-          ctx.rotate((paDeg * DEG2RAD));
           if (nightVision) {
             ctx.filter = 'sepia(100%) hue-rotate(-50deg) saturate(400%)';
           }
-          const drawMaj = Math.max(18, (majArcmin / 60) * degToPx * 1.35);
-          const aspect = Math.max(0.45, Math.min(1.0, minArcmin / Math.max(0.1, majArcmin)));
-          const drawMin = drawMaj * aspect;
-          ctx.globalAlpha = Math.min(0.92, 0.5 + Math.log10(Math.max(1, drawMaj / 10)) * 0.35);
-          ctx.drawImage(photoEntry.img, -drawMaj * 0.5, -drawMin * 0.5, drawMaj, drawMin);
+          // In canonical PNG (128x128), r=1.0 is at 52/64 of half-width (padScale = 64/52 = 1.23)
+          const padScale = 1.23;
+          const effMaj = Math.max(majArcmin, (16 / Math.max(0.05, Math.hypot(majVecX, majVecY))));
+          const effMin = effMaj * Math.max(0.22, Math.min(1.0, minArcmin / Math.max(0.1, majArcmin)));
+          ctx.transform(majVecX, majVecY, minVecX, minVecY, p.x, p.y);
+          ctx.globalAlpha = Math.min(0.92, 0.48 + Math.log10(Math.max(1, semiMajPx / 5)) * 0.35);
+          ctx.drawImage(
+            photoEntry.img,
+            -effMaj * 0.5 * padScale,
+            -effMin * 0.5 * padScale,
+            effMaj * padScale,
+            effMin * padScale
+          );
           ctx.restore();
         }
       }
@@ -741,13 +838,13 @@ export class SkyRenderer {
       // Draw DSO astronomical symbol when zoomed or when Messier/bright
       if (isMessier || mag <= maxMag - 0.5 || fov < 15) {
         const type = row[3] || 'G';
-        const rSym = Math.min(28, Math.max(4.5, radiusPx * 0.65));
-        this._drawDsoSymbol(ctx, p.x, p.y, rSym, type, minArcmin / Math.max(0.1, majArcmin), paDeg, nightVision);
+        this._drawDsoSymbol(ctx, p.x, p.y, semiMajPx, semiMinPx, majVecX, majVecY, minVecX, minVecY, majArcmin, minArcmin, type, nightVision);
 
         if ((isMessier && fov < 75) || (mag < 8.5 && fov < 35) || fov < 6) {
           const label = row[1] ? (row[2] ? `${row[1]} · ${row[2]}` : row[1]) : (row[2] || row[0]);
           ctx.fillStyle = nightVision ? 'rgba(255, 95, 70, 0.85)' : 'rgba(155, 225, 200, 0.88)';
-          ctx.fillText(label, p.x + rSym + 4, p.y + 3);
+          const labelOffset = Math.min(42, Math.max(6, semiMinPx + 5));
+          ctx.fillText(label, p.x + labelOffset, p.y + 3);
         }
 
         this.screenTargets.push({
@@ -757,7 +854,7 @@ export class SkyRenderer {
           name: row[2] || row[1] || row[0],
           x: p.x,
           y: p.y,
-          hitRadius: Math.max(10, rSym + 4),
+          hitRadius: Math.max(10, Math.min(60, semiMajPx + 4)),
           priority: isMessier ? 25 : 15,
           data: row
         });
@@ -766,47 +863,52 @@ export class SkyRenderer {
     ctx.restore();
   }
 
-  _drawDsoSymbol(ctx, x, y, r, type, aspect, paDeg, nightVision) {
+  _drawDsoSymbol(ctx, x, y, semiMajPx, semiMinPx, majVecX, majVecY, minVecX, minVecY, majArcmin, minArcmin, type, nightVision) {
     ctx.save();
-    ctx.translate(x, y);
     ctx.lineWidth = 1.15;
 
     if (type === 'G' || type === 'Gx') {
-      // Galaxy: oriented ellipse
-      ctx.rotate(paDeg * DEG2RAD);
-      ctx.strokeStyle = nightVision ? '#ff5038' : '#ff9966';
+      // Galaxy: ellipse oriented strictly along (majVec, minVec) at true angular size
+      const aAngle = Math.atan2(majVecY, majVecX);
+      ctx.translate(x, y);
+      ctx.rotate(aAngle);
+      ctx.strokeStyle = nightVision ? 'rgba(255, 80, 56, 0.78)' : 'rgba(255, 153, 102, 0.75)';
       ctx.beginPath();
-      ctx.ellipse(0, 0, r, Math.max(2.5, r * Math.max(0.35, aspect)), 0, 0, Math.PI * 2);
-      ctx.stroke();
-    } else if (type === 'GCl' || type === 'GC') {
-      // Globular cluster: circle with cross
-      ctx.strokeStyle = nightVision ? '#ff6040' : '#ffdd66';
-      ctx.beginPath();
-      ctx.arc(0, 0, r, 0, Math.PI * 2);
-      ctx.moveTo(-r, 0); ctx.lineTo(r, 0);
-      ctx.moveTo(0, -r); ctx.lineTo(0, r);
-      ctx.stroke();
-    } else if (type === 'OCl' || type === 'OC' || type === 'Cl+N') {
-      // Open cluster: dashed circle
-      ctx.strokeStyle = nightVision ? '#ff6548' : '#88e2ff';
-      ctx.setLineDash([2.5, 2.5]);
-      ctx.beginPath();
-      ctx.arc(0, 0, r, 0, Math.PI * 2);
-      ctx.stroke();
-    } else if (type === 'PN') {
-      // Planetary nebula: circle with outer ticks
-      ctx.strokeStyle = nightVision ? '#ff5540' : '#66ffb8';
-      ctx.beginPath();
-      ctx.arc(0, 0, r * 0.7, 0, Math.PI * 2);
-      ctx.moveTo(-r * 1.2, 0); ctx.lineTo(-r * 0.7, 0);
-      ctx.moveTo(r * 0.7, 0); ctx.lineTo(r * 1.2, 0);
-      ctx.moveTo(0, -r * 1.2); ctx.lineTo(0, -r * 0.7);
-      ctx.moveTo(0, r * 0.7); ctx.lineTo(0, r * 1.2);
+      ctx.ellipse(0, 0, semiMajPx, Math.max(2.5, semiMinPx), 0, 0, Math.PI * 2);
       ctx.stroke();
     } else {
-      // Diffuse / Emission / Reflection Nebula / SNR: rounded square
-      ctx.strokeStyle = nightVision ? '#ff4a38' : '#e085ff';
-      ctx.strokeRect(-r * 0.85, -r * 0.85, r * 1.7, r * 1.7);
+      const r = Math.min(36, Math.max(4.5, semiMajPx * 0.75));
+      ctx.translate(x, y);
+      if (type === 'GCl' || type === 'GC') {
+        // Globular cluster: circle with cross
+        ctx.strokeStyle = nightVision ? '#ff6040' : '#ffdd66';
+        ctx.beginPath();
+        ctx.arc(0, 0, r, 0, Math.PI * 2);
+        ctx.moveTo(-r, 0); ctx.lineTo(r, 0);
+        ctx.moveTo(0, -r); ctx.lineTo(0, r);
+        ctx.stroke();
+      } else if (type === 'OCl' || type === 'OC' || type === 'Cl+N') {
+        // Open cluster: dashed circle
+        ctx.strokeStyle = nightVision ? '#ff6548' : '#88e2ff';
+        ctx.setLineDash([2.5, 2.5]);
+        ctx.beginPath();
+        ctx.arc(0, 0, r, 0, Math.PI * 2);
+        ctx.stroke();
+      } else if (type === 'PN') {
+        // Planetary nebula: circle with outer ticks
+        ctx.strokeStyle = nightVision ? '#ff5540' : '#66ffb8';
+        ctx.beginPath();
+        ctx.arc(0, 0, r * 0.7, 0, Math.PI * 2);
+        ctx.moveTo(-r * 1.2, 0); ctx.lineTo(-r * 0.7, 0);
+        ctx.moveTo(r * 0.7, 0); ctx.lineTo(r * 1.2, 0);
+        ctx.moveTo(0, -r * 1.2); ctx.lineTo(0, -r * 0.7);
+        ctx.moveTo(0, r * 0.7); ctx.lineTo(0, r * 1.2);
+        ctx.stroke();
+      } else {
+        // Diffuse / Emission / Reflection Nebula / SNR: rounded square
+        ctx.strokeStyle = nightVision ? '#ff4a38' : '#e085ff';
+        ctx.strokeRect(-r * 0.85, -r * 0.85, r * 1.7, r * 1.7);
+      }
     }
     ctx.restore();
   }

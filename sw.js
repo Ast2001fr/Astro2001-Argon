@@ -3,8 +3,8 @@
  * Progressive Web App Service Worker for offline operation and optional pack caching.
  */
 
-const CACHE_CORE = 'uranometrie-core-v6';
-const CACHE_PACKS = 'uranometrie-packs-v6';
+const CACHE_CORE = 'uranometrie-core-v8';
+const CACHE_PACKS = 'uranometrie-packs-v8';
 
 const CORE_ASSETS = [
   './',
@@ -64,19 +64,17 @@ self.addEventListener('fetch', (event) => {
 
   const url = new URL(req.url);
 
-  // For external APIs (Open-Meteo, Celestrak, HiPS DSS2, Wikipedia API), try network first, fail silently offline
+  // Let the browser natively handle cross-origin requests (HiPS DSS2 tiles, Open-Meteo, Celestrak, Wikipedia)
   if (url.origin !== self.location.origin) {
-    event.respondWith(
-      fetch(req).catch(() => new Response('', { status: 503, statusText: 'Offline' }))
-    );
     return;
   }
 
-  // Network-first with cache fallback for HTML, JS, CSS so code updates apply immediately when online
+  // Network-first with cache fallback for HTML, JS, CSS, and JSON catalogs so updates apply immediately when online
   if (
     url.pathname.endsWith('.html') ||
     url.pathname.endsWith('.js') ||
     url.pathname.endsWith('.css') ||
+    url.pathname.endsWith('.json') ||
     url.pathname === '/'
   ) {
     event.respondWith(

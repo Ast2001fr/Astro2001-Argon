@@ -19,7 +19,7 @@ import {
   getShortcutMap,
   normalizeShortcutKey,
   getDefaultToggleState
-} from './features.js?v=6';
+} from './features.js?v=8';
 
 import {
   initI18n,
@@ -28,7 +28,7 @@ import {
   t,
   getConstellationName,
   applyDomTranslations
-} from './i18n.js?v=6';
+} from './i18n.js?v=8';
 
 import {
   dateToJD,
@@ -43,7 +43,7 @@ import {
   bvToTemperatureK,
   computeStellarRadiusSolar,
   formatAltitudeWithFists
-} from './astro/time.js?v=6';
+} from './astro/time.js?v=8';
 
 import {
   computeSolarSystem,
@@ -51,14 +51,14 @@ import {
   getPlanetMoons,
   computeAsteroids,
   DEFAULT_ASTEROIDS
-} from './astro/solar-system.js?v=6';
+} from './astro/solar-system.js?v=8';
 
 import {
   computeAllSatellites,
   predictSatellitePasses,
   fetchCelestrakTLEs,
   DEFAULT_SATELLITES
-} from './astro/sgp4.js?v=6';
+} from './astro/sgp4.js?v=8';
 
 import {
   computeRiseTransitSet,
@@ -66,13 +66,13 @@ import {
   computeMeteorShowers,
   computeEventsCalendar,
   DEFAULT_METEOR_SHOWERS
-} from './astro/events.js?v=6';
+} from './astro/events.js?v=8';
 
-import { SkyViewport } from './render/projection.js?v=6';
-import { SkyRenderer } from './render/sky-renderer.js?v=6';
-import { ObjectCardUI } from './ui/object-card.js?v=6';
-import { PanelsUI } from './ui/panels.js?v=6';
-import { CommandPaletteUI } from './ui/command-palette.js?v=6';
+import { SkyViewport } from './render/projection.js?v=8';
+import { SkyRenderer } from './render/sky-renderer.js?v=8';
+import { ObjectCardUI } from './ui/object-card.js?v=8';
+import { PanelsUI } from './ui/panels.js?v=8';
+import { CommandPaletteUI } from './ui/command-palette.js?v=8';
 
 const COMPASS_DIRS = ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 'S', 'SSO', 'SO', 'OSO', 'O', 'ONO', 'NO', 'NNO'];
 
@@ -232,7 +232,7 @@ export class PlanetariumApp {
 
     // 6. Register Service Worker for offline PWA
     if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('./sw.js?v=2').then(r => r.update()).catch(() => {});
+      navigator.serviceWorker.register('./sw.js?v=8').then(r => r.update()).catch(() => {});
     }
 
     // 7. Start animation loop
@@ -297,13 +297,13 @@ export class PlanetariumApp {
     };
 
     const [constellations, starMeta, asteroids, satellites, meteors, telescopes, wikiIndex] = await Promise.all([
-      fetchJson('data/constellations.json'),
-      fetchJson('data/star-meta.json'),
-      fetchJson('data/asteroids.json'),
-      fetchJson('data/satellites-tle.json'),
-      fetchJson('data/meteors.json'),
-      fetchJson('data/telescopes.json'),
-      fetchJson('data/wiki-index.json')
+      fetchJson('data/constellations.json?v=8'),
+      fetchJson('data/star-meta.json?v=8'),
+      fetchJson('data/asteroids.json?v=8'),
+      fetchJson('data/satellites-tle.json?v=8'),
+      fetchJson('data/meteors.json?v=8'),
+      fetchJson('data/telescopes.json?v=8'),
+      fetchJson('data/wiki-index.json?v=8')
     ]);
 
     if (constellations) this.state.catalogs.constellations = constellations.constellations || constellations;
@@ -328,7 +328,7 @@ export class PlanetariumApp {
       })
       .catch(() => {});
 
-    fetchJson('data/openngc.json').then(dso => {
+    fetchJson('data/openngc.json?v=8').then(dso => {
       if (dso) {
         this.state.catalogs.openngc = dso;
         this.requestRender();
@@ -526,7 +526,20 @@ export class PlanetariumApp {
   toggleLayer(key) {
     if (key in this.state.toggles) {
       this.state.toggles[key] = !this.state.toggles[key];
+      // Mutual exclusivity between online HiPS DSS2 survey and embedded photos + Milky Way
+      if (key === 'dssHips') {
+        if (this.state.toggles.dssHips) {
+          this.state.toggles.dsoPhotos = false;
+          this.state.toggles.milkyWay = false;
+        } else {
+          this.state.toggles.dsoPhotos = true;
+          this.state.toggles.milkyWay = true;
+        }
+      } else if ((key === 'dsoPhotos' || key === 'milkyWay') && this.state.toggles[key]) {
+        this.state.toggles.dssHips = false;
+      }
       this.syncToggleButtons();
+      this.saveSettings();
       this.requestRender();
     }
   }

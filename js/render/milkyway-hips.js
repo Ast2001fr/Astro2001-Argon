@@ -39,11 +39,24 @@ export class MilkyWayAndHipsRenderer {
     this.bufCanvas = document.createElement('canvas');
     this.bufCtx = this.bufCanvas.getContext('2d');
 
-    // HiPS DSS2 Color tile cache (CDS Strasbourg)
-    this.hipsBaseUrl = 'https://alasky.cds.unistra.fr/DSS/DSSColor';
-    this.tileCache = new Map(); // key "order/npix" -> { status: 'loading'|'ready'|'error', img }
-    this.maxCachedTiles = 600;
+    // HiPS DSS2 Color tile mirrors (ESA ESASky primary + CDS Strasbourg fallbacks)
+    this.hipsMirrors = [
+      'https://skies.esac.esa.int/DSSColor',
+      'https://alasky.cds.unistra.fr/DSS/DSSColor',
+      'https://alaskybis.cds.unistra.fr/DSS/DSSColor'
+    ];
+    this.activeMirrorIdx = 0;
+    this.tileCache = new Map(); // key "order/npix" -> { status: 'queued'|'loading'|'ready'|'error', img, mirrorIdx }
+    this.loadQueue = [];
+    this.activeLoads = 0;
+    this.maxConcurrentLoads = 14;
+    this.maxCachedTiles = 700;
     this.onTileLoaded = null;
+
+    // Norder3 Allsky.jpg composite (27x29 grid of all 768 Norder3 tiles in 1 HTTP request)
+    this.allskyStatus = 'idle'; // 'idle' | 'loading' | 'ready' | 'error'
+    this.allskyImg = null;
+    this.allskyMirrorIdx = 0;
   }
 
   _buildProceduralMilkyWay() {
@@ -241,15 +254,60 @@ export class MilkyWayAndHipsRenderer {
   }
 
   /**
-   * Render HiPS DSS2 Color photographic sky survey tiles from CDS Strasbourg
+   * Ensure the Norder3/Allsky.jpg (768-tile full-sky composite) is loaded
+   * so that the entire sky has an immediate DSS2 photographic base layer
+   * while high-resolution 512x512 tiles stream in.
+   */
+  _ensureAllskyLoaded() {
+    if (this.allskyStatus === 'ready' || this.allskyStatus === 'loading') return;
+    this.allskyStatus = 'loading';
+
+    const tryMirror = (mIdx) => {
+      if (mIdx >= this.hipsMirrors.length) {
+        this.allskyStatus = 'error';
+        return;
+      }
+      const base = this.hipsMirrors[mIdx];
+      const img = new Image();
+      let timedOut = false;
+      const timer = setTimeout(() => {
+        timedOut = true;
+        img.src = '';
+        tryMirror(mIdx + 1);
+      }, 6500);
+
+      img.onload = () => {
+        if (timedOut) return;
+        clearTimeout(timer);
+        this.allskyImg = img;
+        this.allskyStatus = 'ready';
+        this.activeMirrorIdx = mIdx;
+        if (this.onTileLoaded) this.onTileLoaded();
+      };
+      img.onerror = () => {
+        if (timedOut) return;
+        clearTimeout(timer);
+        tryMirror(mIdx + 1);
+      };
+      img.src = `${base}/Norder3/Allsky.jpg`;
+    };
+
+    tryMirror(this.activeMirrorIdx);
+  }
+
+  /**
+   * Render HiPS DSS2 Color photographic sky survey tiles (ESA ESASky + CDS mirrors)
    * Loaded on demand as the user navigates!
    */
   renderHipsDSS2(ctx, viewport, projectRaDecFn, nightVision = false) {
-    // Choose HEALPix Norder based on current FOV (Norder 3 = 768 tiles across sky, up to Norder 6)
+    this._ensureAllskyLoaded();
+
+    // Choose HEALPix Norder based on current FOV (Norder 3 = 768 tiles across sky, up to Norder 7)
     let norder = 3;
     if (viewport.fov < 45) norder = 4;
     if (viewport.fov < 14) norder = 5;
     if (viewport.fov < 4.5) norder = 6;
+    if (viewport.fov < 1.3) norder = 7;
 
     const nside = 1 << norder;
     const npixTotal = 12 * nside * nside;
@@ -262,7 +320,7 @@ export class MilkyWayAndHipsRenderer {
       for (let gx = 0; gx <= gridN; gx++) {
         const sx = (gx / gridN) * viewport.width;
         const eq = viewport.unprojectEqAtScreen ? viewport.unprojectEqAtScreen(sx, sy) : null;
-        if (eq) {
+        if (eq && Number.isFinite(eq.raDeg) && Number.isFinite(eq.decDeg)) {
           const ipix = ang2pixNest(nside, (90 - eq.decDeg) * DEG2RAD, eq.raDeg * DEG2RAD);
           if (ipix >= 0 && ipix < npixTotal) {
             visiblePixels.add(ipix);
@@ -291,18 +349,32 @@ export class MilkyWayAndHipsRenderer {
       }
     }
 
+    // Sort visible tiles by distance from screen center so central tiles load first
+    const sortedPixels = Array.from(visiblePixels).map((ipix) => {
+      const center = pix2angNestCenter(nside, ipix);
+      const p = projectRaDecFn(center.raDeg, center.decDeg);
+      const dist = (p && p.visible)
+        ? Math.hypot(p.x - viewport.cx, p.y - viewport.cy)
+        : 99999;
+      return { ipix, dist };
+    }).sort((a, b) => a.dist - b.dist);
+
     ctx.save();
     ctx.globalCompositeOperation = 'screen';
     if (nightVision) {
-      ctx.filter = 'sepia(100%) hue-rotate(-50deg) saturate(400%) brightness(0.7)';
+      ctx.filter = 'sepia(100%) hue-rotate(-50deg) saturate(400%) brightness(0.85)';
+    } else {
+      ctx.filter = 'brightness(1.38) contrast(1.18) saturate(1.16)';
     }
 
     const subDiv = norder <= 3 ? 3 : 2;
     const maxSpanLimit = Math.max(viewport.width, viewport.height) * 0.85;
+    let readyCount = 0;
 
-    for (const ipix of visiblePixels) {
-      const tile = this._getOrLoadHipsTile(norder, ipix);
+    for (const { ipix, dist } of sortedPixels) {
+      const tile = this._getOrLoadHipsTile(norder, ipix, dist);
       if (tile && tile.status === 'ready' && tile.img) {
+        readyCount++;
         this._drawHipsTileSubdivided(
           ctx,
           tile.img,
@@ -316,15 +388,18 @@ export class MilkyWayAndHipsRenderer {
           1,
           1
         );
-      } else if (norder > 3) {
-        // Fallback to parent tile (Norder - 1 or Norder 3) while high-res tile loads
+        continue;
+      }
+
+      // Fallback 1: check cached parent tile (Norder - 1 down to Norder 3)
+      let drewFallback = false;
+      if (norder > 3) {
         for (let parentOrder = norder - 1; parentOrder >= 3; parentOrder--) {
           const shift = (norder - parentOrder) * 2;
           const parentIpix = ipix >>> shift;
           const parentKey = `${parentOrder}/${parentIpix}`;
           const parentTile = this.tileCache.get(parentKey);
           if (parentTile && parentTile.status === 'ready' && parentTile.img) {
-            const parentNside = 1 << parentOrder;
             const childRel = ipix & ((1 << shift) - 1);
             const subScale = 1 / (1 << (norder - parentOrder));
             const relX = compactBits(childRel) * subScale;
@@ -342,13 +417,65 @@ export class MilkyWayAndHipsRenderer {
               subScale,
               subScale
             );
+            drewFallback = true;
             break;
           }
         }
       }
+
+      // Fallback 2: use the Norder3 Allsky.jpg composite (27 cols x 29 rows of all 768 Norder3 tiles)
+      if (!drewFallback && this.allskyStatus === 'ready' && this.allskyImg) {
+        const shift3 = (norder - 3) * 2;
+        const ipix3 = ipix >>> shift3;
+        const col = ipix3 % 27;
+        const row = Math.floor(ipix3 / 27);
+        const subScale = 1 / (1 << (norder - 3));
+        const childRel = shift3 > 0 ? (ipix & ((1 << shift3) - 1)) : 0;
+        const relX = shift3 > 0 ? compactBits(childRel) * subScale : 0;
+        const relY = shift3 > 0 ? compactBits(childRel >>> 1) * subScale : 0;
+
+        this._drawHipsTileSubdivided(
+          ctx,
+          this.allskyImg,
+          nside,
+          ipix,
+          projectRaDecFn,
+          norder === 3 ? 2 : 1,
+          maxSpanLimit,
+          (col + relY) / 27,
+          (row + relX) / 29,
+          subScale / 27,
+          subScale / 29
+        );
+      }
     }
 
     ctx.restore();
+
+    // Draw subtle HUD status indicator when DSS2 tiles are streaming
+    const pendingCount = this.activeLoads + this.loadQueue.length + (this.allskyStatus === 'loading' ? 1 : 0);
+    if (pendingCount > 0) {
+      ctx.save();
+      const label = `DSS2 Color · Chargement (${readyCount}/${sortedPixels.length})…`;
+      ctx.font = '500 11px system-ui, -apple-system, sans-serif';
+      const tw = ctx.measureText(label).width;
+      const bx = 18;
+      const by = 64;
+      ctx.fillStyle = nightVision ? 'rgba(28, 4, 4, 0.82)' : 'rgba(10, 16, 28, 0.78)';
+      ctx.strokeStyle = nightVision ? 'rgba(220, 50, 35, 0.45)' : 'rgba(220, 175, 95, 0.45)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      if (ctx.roundRect) {
+        ctx.roundRect(bx, by, tw + 22, 24, 12);
+      } else {
+        ctx.rect(bx, by, tw + 22, 24);
+      }
+      ctx.fill();
+      ctx.stroke();
+      ctx.fillStyle = nightVision ? '#ff6a52' : '#f2c97d';
+      ctx.fillText(label, bx + 11, by + 16);
+      ctx.restore();
+    }
   }
 
   /**
@@ -392,11 +519,6 @@ export class MilkyWayAndHipsRenderer {
         const u0 = (uvOffsetU + (sy / subDiv) * uvScaleU) * w;
         const u1 = (uvOffsetU + ((sy + 1) / subDiv) * uvScaleU) * w;
 
-        // 4 corners of sub-cell:
-        // p00 = (fx0, fy0) -> (u0, v0)
-        // p01 = (fx0, fy1) -> (u1, v0)
-        // p11 = (fx1, fy1) -> (u1, v1)
-        // p10 = (fx1, fy0) -> (u0, v1)
         const p00 = gridPts[sx * (subDiv + 1) + sy];
         const p01 = gridPts[sx * (subDiv + 1) + (sy + 1)];
         const p11 = gridPts[(sx + 1) * (subDiv + 1) + (sy + 1)];
@@ -417,45 +539,122 @@ export class MilkyWayAndHipsRenderer {
     }
   }
 
-  _getOrLoadHipsTile(norder, ipix) {
+  _getOrLoadHipsTile(norder, ipix, priorityDist = 0) {
     const key = `${norder}/${ipix}`;
     if (this.tileCache.has(key)) {
-      return this.tileCache.get(key);
+      const cached = this.tileCache.get(key);
+      if (cached.status === 'queued') {
+        cached.priorityDist = priorityDist;
+      }
+      return cached;
     }
 
-    // Evict oldest if cache full
+    // Evict oldest ready/error entry if cache is full
     if (this.tileCache.size >= this.maxCachedTiles) {
-      const oldestKey = this.tileCache.keys().next().value;
-      this.tileCache.delete(oldestKey);
+      for (const [k, v] of this.tileCache.entries()) {
+        if (v.status === 'ready' || v.status === 'error') {
+          this.tileCache.delete(k);
+          break;
+        }
+      }
     }
 
-    const dir = Math.floor(ipix / 10000) * 10000;
-    const url = `${this.hipsBaseUrl}/Norder${norder}/Dir${dir}/Npix${ipix}.jpg`;
-    const entry = { status: 'loading', img: null };
+    const entry = {
+      key,
+      norder,
+      ipix,
+      status: 'queued',
+      img: null,
+      mirrorIdx: this.activeMirrorIdx,
+      priorityDist
+    };
     this.tileCache.set(key, entry);
-
-    const img = new Image();
-    img.crossOrigin = 'anonymous';
-    img.onload = () => {
-      entry.status = 'ready';
-      entry.img = img;
-      if (this.onTileLoaded) this.onTileLoaded();
-    };
-    img.onerror = () => {
-      entry.status = 'error';
-    };
-    img.src = url;
+    this.loadQueue.push(entry);
+    this._pumpLoadQueue();
     return entry;
+  }
+
+  _pumpLoadQueue() {
+    if (this.activeLoads >= this.maxConcurrentLoads || this.loadQueue.length === 0) return;
+
+    // Sort queue so tiles closest to screen center are fetched first
+    this.loadQueue.sort((a, b) => a.priorityDist - b.priorityDist);
+
+    // Keep queue bounded if user pans rapidly across many orders
+    if (this.loadQueue.length > 90) {
+      const dropped = this.loadQueue.splice(90);
+      for (const item of dropped) {
+        if (item.status === 'queued') {
+          this.tileCache.delete(item.key);
+        }
+      }
+    }
+
+    while (this.activeLoads < this.maxConcurrentLoads && this.loadQueue.length > 0) {
+      const entry = this.loadQueue.shift();
+      if (!entry || entry.status !== 'queued') continue;
+      this._startTileFetch(entry);
+    }
+  }
+
+  _startTileFetch(entry) {
+    entry.status = 'loading';
+    this.activeLoads++;
+
+    const tryMirror = (mIdx) => {
+      if (mIdx >= this.hipsMirrors.length) {
+        entry.status = 'error';
+        this.activeLoads = Math.max(0, this.activeLoads - 1);
+        this._pumpLoadQueue();
+        return;
+      }
+
+      const base = this.hipsMirrors[mIdx];
+      const dir = Math.floor(entry.ipix / 10000) * 10000;
+      const url = `${base}/Norder${entry.norder}/Dir${dir}/Npix${entry.ipix}.jpg`;
+
+      const img = new Image();
+      let settled = false;
+      const timer = setTimeout(() => {
+        if (settled) return;
+        settled = true;
+        img.src = '';
+        tryMirror(mIdx + 1);
+      }, 6000);
+
+      img.onload = () => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        entry.status = 'ready';
+        entry.img = img;
+        this.activeMirrorIdx = mIdx;
+        this.activeLoads = Math.max(0, this.activeLoads - 1);
+        if (this.onTileLoaded) this.onTileLoaded();
+        this._pumpLoadQueue();
+      };
+
+      img.onerror = () => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        tryMirror(mIdx + 1);
+      };
+
+      img.src = url;
+    };
+
+    tryMirror(entry.mirrorIdx);
   }
 
   _drawTriangle(ctx, img, x0, y0, x1, y1, x2, y2, u0, v0, u1, v1, u2, v2) {
     const denom = u0 * (v2 - v1) - u1 * v2 + u2 * v1 + (u1 - u2) * v0;
     if (Math.abs(denom) < 1e-5) return;
 
-    // Expand clipping triangle slightly outward (~0.65px) from centroid to prevent canvas anti-aliasing hairline seams
+    // Expand clipping triangle slightly outward (~0.75px) from centroid to prevent canvas anti-aliasing hairline seams
     const cx = (x0 + x1 + x2) / 3;
     const cy = (y0 + y1 + y2) / 3;
-    const expand = 0.65;
+    const expand = 0.75;
     const d0 = Math.hypot(x0 - cx, y0 - cy) || 1;
     const d1 = Math.hypot(x1 - cx, y1 - cy) || 1;
     const d2 = Math.hypot(x2 - cx, y2 - cy) || 1;
@@ -476,7 +675,7 @@ export class MilkyWayAndHipsRenderer {
     const dy = (u0 * (v2 * y1 - v1 * y2) + v0 * (u1 * y2 - u2 * y1) + (u2 * v1 - u1 * v2) * y0) / denom;
 
     ctx.transform(m11, m12, m21, m22, dx, dy);
-    ctx.globalAlpha = 0.88;
+    ctx.globalAlpha = 0.95;
     ctx.drawImage(img, 0, 0);
     ctx.restore();
   }

@@ -336,44 +336,13 @@ CONSTELLATIONS_DATA = [
 ]
 
 
-def compute_bounds_for_constellation(ra_c, dec_c, lines):
+def load_official_iau_bounds():
     """
-    Create an authentic IAU-style rectilinear RA/Dec step boundary polygon
-    enclosing the constellation's asterism lines and center.
+    Load official IAU (Delporte 1930 / Davenhall & Leggett J2000) constellation boundary polygons.
     """
-    ras = [ra_c]
-    decs = [dec_c]
-    for poly in lines:
-        for i in range(0, len(poly), 2):
-            r = poly[i]
-            d = poly[i + 1]
-            # Handle wrap-around near RA 0/360 relative to ra_c
-            diff = ((r - ra_c + 180.0) % 360.0) - 180.0
-            ras.append(ra_c + diff)
-            decs.append(d)
-
-    min_ra = min(ras) - 4.5
-    max_ra = max(ras) + 4.5
-    min_dec = max(-89.5, min(decs) - 4.0)
-    max_dec = min(89.5, max(decs) + 4.0)
-    mid_ra = 0.5 * (min_ra + max_ra)
-    mid_dec = 0.5 * (min_dec + max_dec)
-
-    # IAU boundaries follow constant RA and constant Dec segments with steps
-    pts = [
-        [round(min_ra % 360.0, 2), round(min_dec, 2)],
-        [round(mid_ra % 360.0, 2), round(min_dec, 2)],
-        [round(mid_ra % 360.0, 2), round(min_dec + 0.8, 2)],
-        [round(max_ra % 360.0, 2), round(min_dec + 0.8, 2)],
-        [round(max_ra % 360.0, 2), round(mid_dec, 2)],
-        [round((max_ra - 0.8) % 360.0, 2), round(mid_dec, 2)],
-        [round((max_ra - 0.8) % 360.0, 2), round(max_dec, 2)],
-        [round(mid_ra % 360.0, 2), round(max_dec, 2)],
-        [round(mid_ra % 360.0, 2), round(max_dec - 0.6, 2)],
-        [round(min_ra % 360.0, 2), round(max_dec - 0.6, 2)],
-        [round(min_ra % 360.0, 2), round(min_dec, 2)],
-    ]
-    return pts
+    bounds_path = os.path.join(os.path.dirname(__file__), "iau_bounds_data.json")
+    with open(bounds_path, "r", encoding="utf-8") as f:
+        return json.load(f)
 
 
 def find_constellation_idx(ra_deg, dec_deg):
@@ -402,9 +371,11 @@ def find_constellation_idx(ra_deg, dec_deg):
 
 def main():
     assert len(CONSTELLATIONS_DATA) == 88, f"Expected 88 constellations, got {len(CONSTELLATIONS_DATA)}"
+    iau_bounds = load_official_iau_bounds()
     out = []
     for idx, (code, latin, genitive, fr, en, es, de, ra, dec, lines) in enumerate(CONSTELLATIONS_DATA):
-        bounds = compute_bounds_for_constellation(ra, dec, lines)
+        rings = iau_bounds.get(code, [])
+        primary_bounds = rings[0] if rings else []
         out.append({
             "idx": idx,
             "code": code,
@@ -414,14 +385,16 @@ def main():
             "ra": ra,
             "dec": dec,
             "lines": lines,
-            "bounds": bounds,
+            "bounds": primary_bounds,
+            "boundRings": rings,
         })
 
     os.makedirs("data", exist_ok=True)
     with open("data/constellations.json", "w", encoding="utf-8") as f:
         json.dump(out, f, ensure_ascii=False, separators=(",", ":"))
-    print(f"Generated data/constellations.json with {len(out)} constellations.")
+    print(f"Generated data/constellations.json with {len(out)} constellations (official IAU boundaries).")
 
 
 if __name__ == "__main__":
     main()
+

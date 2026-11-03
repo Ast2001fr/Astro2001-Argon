@@ -258,6 +258,8 @@ export class PanelsUI {
 
     this.modalBody.querySelector('#bg-mode-dss')?.addEventListener('click', () => {
       this.app.state.toggles.dssHips = true;
+      this.app.state.toggles.milkyWay = false;
+      this.app.state.toggles.dsoPhotos = false;
       this.app.syncToggleButtons();
       this.app.saveSettings();
       this.app.requestRender();

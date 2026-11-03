@@ -13,8 +13,8 @@ export class CommandPaletteUI {
   constructor(app) {
     this.app = app;
     this.overlay = document.getElementById('cmd-palette-overlay');
-    this.input = document.getElementById('cmd-palette-input');
-    this.resultsEl = document.getElementById('cmd-palette-results');
+    this.input = document.getElementById('cmd-search-input') || document.getElementById('cmd-palette-input');
+    this.resultsEl = document.getElementById('cmd-results-list') || document.getElementById('cmd-palette-results');
     this.isOpen = false;
     this.selectedIndex = 0;
     this.currentItems = [];
