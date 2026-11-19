@@ -125,7 +125,11 @@ export class ObjectCardUI {
 
         <!-- SECTION 1: CE SOIR -->
         <section class="obj-section">
-          <h3 class="obj-section-title">1 · ${t('objectCard.tonight', 'Ce soir')}</h3>
+          <div class="obj-section-head-row">
+            <h3 class="obj-section-title">1 · ${t('objectCard.tonight', 'Ce soir')}</h3>
+            ${details.rts.isCircumpolar ? `<span class="rts-status-badge circumpolar">Circumpolaire · min ${details.rts.minAltStr || ''}</span>` : ''}
+            ${details.rts.neverRises ? `<span class="rts-status-badge never">Ne se lève pas</span>` : ''}
+          </div>
           <div class="obj-kv-grid cols-3">
             <div class="obj-kv-box">
               <span class="kv-label">${t('objectCard.rise', 'Lever')}</span>
@@ -140,6 +144,7 @@ export class ObjectCardUI {
               <span class="kv-val">${details.rts.setStr || '—'}</span>
             </div>
           </div>
+          ${this._renderAltitudeCurveSvg(details.rts)}
         </section>
 
         <!-- SECTION 2: PHYSIQUE + ÉCHELLE DE MAGNITUDE -->
@@ -455,6 +460,97 @@ export class ObjectCardUI {
       <a class="wiki-link" href="${wikiUrl}" target="_blank" rel="noopener noreferrer">
         Wikipédia : ${exactTitle} ↗
       </a>
+    `;
+  }
+
+  _renderAltitudeCurveSvg(rts) {
+    const pts = rts && Array.isArray(rts.nightCurve) ? rts.nightCurve : [];
+    if (pts.length < 3) return '';
+
+    const W = 300;
+    const H = 82;
+    const padL = 22;
+    const padR = 8;
+    const padT = 8;
+    const padB = 16;
+    const plotW = W - padL - padR;
+    const plotH = H - padT - padB;
+
+    // Map altitude (-15°..+90°) to Y
+    const minAltDom = -15;
+    const maxAltDom = 90;
+    const yOf = (alt) => {
+      const clamped = Math.max(minAltDom, Math.min(maxAltDom, alt));
+      return padT + ((maxAltDom - clamped) / (maxAltDom - minAltDom)) * plotH;
+    };
+    const xOf = (frac) => padL + frac * plotW;
+
+    const yZero = yOf(0);
+    const y45 = yOf(45);
+    const y90 = yOf(90);
+
+    // Night/twilight background columns
+    const colW = plotW / (pts.length - 1);
+    const bgCols = pts.slice(0, -1).map((p, i) => {
+      const fill = p.sunAlt <= -18
+        ? 'rgba(5, 10, 22, 0.72)'
+        : p.sunAlt <= -6
+          ? 'rgba(18, 36, 70, 0.55)'
+          : p.sunAlt <= 0
+            ? 'rgba(42, 62, 104, 0.45)'
+            : 'rgba(65, 95, 145, 0.28)';
+      return `<rect x="${(padL + i * colW).toFixed(1)}" y="${padT}" width="${(colW + 0.6).toFixed(1)}" height="${plotH}" fill="${fill}"/>`;
+    }).join('');
+
+    // Build smooth polyline & area under curve above 0°
+    const curveCoords = pts.map(p => `${xOf(p.frac).toFixed(1)},${yOf(p.alt).toFixed(1)}`);
+    const areaCoords = [
+      `${xOf(0).toFixed(1)},${yZero.toFixed(1)}`,
+      ...pts.map(p => `${xOf(p.frac).toFixed(1)},${yOf(Math.max(0, p.alt)).toFixed(1)}`),
+      `${xOf(1).toFixed(1)},${yZero.toFixed(1)}`
+    ].join(' ');
+
+    // Current time marker interpolated on curve
+    const nf = Math.max(0, Math.min(1, rts.nowFrac ?? 0.5));
+    const idxF = nf * (pts.length - 1);
+    const i0 = Math.floor(idxF);
+    const i1 = Math.min(pts.length - 1, i0 + 1);
+    const t = idxF - i0;
+    const nowAlt = pts[i0].alt * (1 - t) + pts[i1].alt * t;
+    const nowX = xOf(nf);
+    const nowY = yOf(nowAlt);
+
+    return `
+      <div class="alt-curve-card" title="Courbe de hauteur de midi à midi (zones sombres = nuit astronomique)">
+        <svg viewBox="0 0 ${W} ${H}" class="alt-curve-svg" aria-label="Courbe de hauteur sur 24 heures">
+          <defs>
+            <linearGradient id="altAreaGrad" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stop-color="var(--accent)" stop-opacity="0.34"/>
+              <stop offset="100%" stop-color="var(--accent)" stop-opacity="0.02"/>
+            </linearGradient>
+            <clipPath id="altPlotClip">
+              <rect x="${padL}" y="${padT}" width="${plotW}" height="${plotH}" rx="4"/>
+            </clipPath>
+          </defs>
+          <g clip-path="url(#altPlotClip)">
+            ${bgCols}
+            <line x1="${padL}" y1="${y45.toFixed(1)}" x2="${W - padR}" y2="${y45.toFixed(1)}" stroke="rgba(165,195,235,0.12)" stroke-dasharray="2 3" stroke-width="0.8"/>
+            <line x1="${padL}" y1="${yZero.toFixed(1)}" x2="${W - padR}" y2="${yZero.toFixed(1)}" stroke="rgba(165,195,235,0.34)" stroke-width="1"/>
+            <polygon points="${areaCoords}" fill="url(#altAreaGrad)"/>
+            <polyline points="${curveCoords.join(' ')}" fill="none" stroke="var(--accent)" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"/>
+            <line x1="${nowX.toFixed(1)}" y1="${padT}" x2="${nowX.toFixed(1)}" y2="${padT + plotH}" stroke="rgba(255,255,255,0.22)" stroke-dasharray="2 2" stroke-width="0.9"/>
+            <circle cx="${nowX.toFixed(1)}" cy="${nowY.toFixed(1)}" r="4.8" fill="var(--accent)" opacity="0.26"/>
+            <circle cx="${nowX.toFixed(1)}" cy="${nowY.toFixed(1)}" r="2.7" fill="var(--accent)" stroke="#080d18" stroke-width="1"/>
+          </g>
+          <rect x="${padL}" y="${padT}" width="${plotW}" height="${plotH}" rx="4" fill="none" stroke="rgba(160,190,235,0.18)" stroke-width="0.8"/>
+          <text x="${padL - 4}" y="${(y90 + 3).toFixed(1)}" text-anchor="end" fill="var(--text-muted)" font-size="7.5" font-family="IBM Plex Mono, monospace">90°</text>
+          <text x="${padL - 4}" y="${(y45 + 3).toFixed(1)}" text-anchor="end" fill="var(--text-muted)" font-size="7.5" font-family="IBM Plex Mono, monospace">45°</text>
+          <text x="${padL - 4}" y="${(yZero + 3).toFixed(1)}" text-anchor="end" fill="var(--text-secondary)" font-size="7.5" font-family="IBM Plex Mono, monospace">0°</text>
+          <text x="${xOf(0.25).toFixed(1)}" y="${H - 3}" text-anchor="middle" fill="var(--text-muted)" font-size="8" font-family="IBM Plex Mono, monospace">18h</text>
+          <text x="${xOf(0.50).toFixed(1)}" y="${H - 3}" text-anchor="middle" fill="var(--text-secondary)" font-size="8" font-family="IBM Plex Mono, monospace">00h</text>
+          <text x="${xOf(0.75).toFixed(1)}" y="${H - 3}" text-anchor="middle" fill="var(--text-muted)" font-size="8" font-family="IBM Plex Mono, monospace">06h</text>
+        </svg>
+      </div>
     `;
   }
 }

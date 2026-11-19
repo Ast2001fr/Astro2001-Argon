@@ -606,7 +606,10 @@ export class SkyRenderer {
       this._renderInstrumentFieldFrame(ctx, state, projectRaDec, nightVision);
     }
 
-    // 13. Selection Reticle
+    // 13. Hover & Selection Reticles
+    if (state.hoveredObject && (!state.selectedObject || state.hoveredObject.id !== state.selectedObject.id)) {
+      this._renderHoverReticle(ctx, state.hoveredObject, nightVision);
+    }
     if (state.selectedObject) {
       this._renderSelectionReticle(ctx, state, projectRaDec, nightVision);
     }
@@ -1431,7 +1434,7 @@ export class SkyRenderer {
       let minVecX = 0;
       let minVecY = degToPx / 60;
 
-      if ((isGalaxy || majArcmin >= 10) && paDeg != null) {
+      if ((isGalaxy || majArcmin >= 6) && paDeg != null) {
         const stepDeg = 0.05;
         const stepArcmin = stepDeg * 60;
         const signN = dec <= 89.5 ? 1 : -1;
@@ -1454,9 +1457,10 @@ export class SkyRenderer {
         }
       }
 
-      const semiMajPx = Math.max(4.0, Math.hypot(majVecX, majVecY) * majArcmin * 0.5);
-      const semiMinPx = (row[8] && row[9] && paDeg != null)
-        ? Math.max(2.6, Math.hypot(minVecX, minVecY) * minArcmin * 0.5)
+      const maxDimPx = Math.max(viewport.width, viewport.height) * 2.2;
+      const semiMajPx = Math.min(maxDimPx, Math.max(4.0, Math.hypot(majVecX, majVecY) * majArcmin * 0.5));
+      const semiMinPx = (row[8] && row[9])
+        ? Math.min(maxDimPx, Math.max(2.6, Math.hypot(minVecX, minVecY) * minArcmin * 0.5))
         : semiMajPx;
 
       const prevAlpha = ctx.globalAlpha;
@@ -1475,12 +1479,13 @@ export class SkyRenderer {
         type,
         nightVision,
         id,
-        messier
+        messier,
+        maxDimPx
       );
       ctx.globalAlpha = prevAlpha;
 
-      // Reserve symbol obstacle so no label is drawn across the symbol
-      this._reserveObstacle(p.x, p.y, Math.min(14, Math.max(4.5, semiMinPx * 0.5)));
+      // Reserve symbol obstacle so no label is drawn across compact symbols
+      this._reserveObstacle(p.x, p.y, Math.min(18, Math.max(4.5, semiMinPx * 0.5)));
 
       // Queue label only when in reach and FOV < 35° (matching Astro2001 drawDSO)
       if (showLabels && !horsPortee) {
@@ -1489,7 +1494,10 @@ export class SkyRenderer {
         const labelText = commonName || cleanCode;
         const hasCommonName = !!commonName;
 
-        const rLabelOff = Math.min(26, Math.max(6, Math.min(semiMajPx, semiMinPx) * 0.65 + 4));
+        // For large zoomed-in nebulae/galaxies, place label gracefully near the edge or center-offset
+        const rLabelOff = semiMinPx > 75
+          ? 12
+          : Math.min(48, Math.max(6, Math.min(semiMajPx, semiMinPx) * 0.65 + 4));
         const priority = (hasCommonName ? 56 : isMessier ? 52 : 34) + Math.max(0, 14 - mag) * 1.5;
 
         this._queueLabel({
@@ -1503,7 +1511,7 @@ export class SkyRenderer {
             ? '500 11px "IBM Plex Sans", system-ui, -apple-system, sans-serif'
             : '400 10.5px "IBM Plex Sans", system-ui, -apple-system, sans-serif',
           color: dsoColor,
-          alpha: 0.90,
+          alpha: 0.92,
           heightPx: 11
         });
       }
@@ -1513,9 +1521,12 @@ export class SkyRenderer {
         id: row[0],
         messier: row[1],
         name: FRENCH_DSO_NAMES[messier] || FRENCH_DSO_NAMES[id] || row[2] || formatCatalogCode(messier || id),
+        ra,
+        dec,
+        mag,
         x: p.x,
         y: p.y,
-        hitRadius: Math.max(10, Math.min(54, semiMajPx + 4)),
+        hitRadius: Math.max(10, Math.min(84, semiMajPx + 4)),
         priority: isMessier ? 28 : 16,
         data: row
       });
@@ -1524,32 +1535,45 @@ export class SkyRenderer {
   }
 
   /**
-   * Astro2001 Cartographic DSO Symbols:
+   * Astro2001 Cartographic DSO Symbols (True Angular Scale — never shrinks on zoom!):
    * - Diffuse / Emission / Reflection Nebulae & SNR: Luminous green contour (`#73da78`)
    * - Open Clusters (`OCl`): Warm ochre-yellow dashed circle (`#e8c46c`)
    * - Globular Clusters (`GCl`): Warm gold crossed circle (`#f2ca5c`)
    * - Planetary Nebulae (`PN`): Emerald-teal circle with 4 external cardinal ticks (`#69e1af`)
    * - Galaxies (`G`): Coral-salmon oriented ellipse (`#e47a60`)
    */
-  _drawDsoSymbol(ctx, x, y, semiMajPx, semiMinPx, majVecX, majVecY, type, nightVision, id = '', messier = '') {
+  _drawDsoSymbol(ctx, x, y, semiMajPx, semiMinPx, majVecX, majVecY, type, nightVision, id = '', messier = '', maxDimPx = 4000) {
     ctx.save();
-    ctx.lineWidth = 1.15;
     let labelColor = nightVision ? '#ff7052' : '#9ee6b8';
+
+    // Smoothly attenuate stroke alpha for very large zoomed-in contours (Astro2001 DSO_BIG_PX = 70)
+    const bigFade = (radPx) => (radPx > 70 ? Math.max(0.32, Math.min(1, Math.sqrt(70 / radPx))) : 1);
 
     if (type === 'G' || type === 'Gx') {
       const aAngle = Math.atan2(majVecY, majVecX);
-      const rx = Math.min(52, Math.max(5, semiMajPx));
-      const ry = Math.min(36, Math.max(2.6, semiMinPx));
-      const col = nightVision ? 'rgba(255, 78, 54, 0.82)' : 'rgba(230, 124, 96, 0.85)';
-      labelColor = nightVision ? '#ff785a' : '#f09c84';
+      const rx = Math.min(maxDimPx, Math.max(5, semiMajPx));
+      const ry = Math.min(maxDimPx, Math.max(2.6, semiMinPx));
+      const fade = bigFade(rx);
+      ctx.globalAlpha *= fade;
+      ctx.lineWidth = rx > 120 ? 1.35 : 1.15;
+      const col = nightVision ? 'rgba(255, 78, 54, 0.85)' : 'rgba(232, 130, 102, 0.88)';
+      labelColor = nightVision ? '#ff785a' : '#f2a48d';
       ctx.translate(x, y);
       ctx.rotate(aAngle);
+      if (rx >= 14 && rx <= 900) {
+        ctx.fillStyle = nightVision ? 'rgba(255, 78, 54, 0.04)' : 'rgba(232, 130, 102, 0.045)';
+        ctx.beginPath();
+        ctx.ellipse(0, 0, rx, ry, 0, 0, Math.PI * 2);
+        ctx.fill();
+      }
       ctx.strokeStyle = col;
       ctx.beginPath();
       ctx.ellipse(0, 0, rx, ry, 0, 0, Math.PI * 2);
       ctx.stroke();
     } else if (type === 'GCl' || type === 'GC') {
-      const r = Math.min(22, Math.max(5.5, semiMajPx * 0.65));
+      const r = Math.min(maxDimPx, Math.max(5.5, semiMajPx * 0.85));
+      ctx.globalAlpha *= bigFade(r);
+      ctx.lineWidth = 1.15;
       const col = nightVision ? '#ff6442' : '#f2ca5c';
       labelColor = nightVision ? '#ff7c5c' : '#f5d77f';
       ctx.translate(x, y);
@@ -1560,51 +1584,60 @@ export class SkyRenderer {
       ctx.moveTo(0, -r); ctx.lineTo(0, r);
       ctx.stroke();
     } else if (type === 'OCl' || type === 'OC') {
-      const r = Math.min(28, Math.max(5.5, semiMajPx * 0.68));
+      const r = Math.min(maxDimPx, Math.max(5.5, semiMajPx * 0.92));
+      ctx.globalAlpha *= bigFade(r);
+      ctx.lineWidth = r > 120 ? 1.25 : 1.1;
       const col = nightVision ? '#ff6848' : '#e8c46c';
       labelColor = nightVision ? '#ff8060' : '#f0d284';
       ctx.translate(x, y);
       ctx.strokeStyle = col;
-      ctx.setLineDash([2.8, 2.6]);
+      const dashLen = Math.min(10, Math.max(2.8, r * 0.08));
+      ctx.setLineDash([dashLen, dashLen * 0.9]);
       ctx.beginPath();
       ctx.arc(0, 0, r, 0, Math.PI * 2);
       ctx.stroke();
     } else if (type === 'PN') {
-      const r = Math.min(18, Math.max(4.8, semiMajPx * 0.6));
+      const r = Math.min(maxDimPx, Math.max(4.8, semiMajPx * 0.85));
+      ctx.globalAlpha *= bigFade(r);
+      ctx.lineWidth = 1.15;
       const col = nightVision ? '#ff5840' : '#69e1af';
       labelColor = nightVision ? '#ff7658' : '#85ecc0';
       ctx.translate(x, y);
       ctx.strokeStyle = col;
       ctx.beginPath();
       ctx.arc(0, 0, r * 0.68, 0, Math.PI * 2);
-      ctx.moveTo(-r * 1.18, 0); ctx.lineTo(-r * 0.68, 0);
-      ctx.moveTo(r * 0.68, 0); ctx.lineTo(r * 1.18, 0);
-      ctx.moveTo(0, -r * 1.18); ctx.lineTo(0, -r * 0.68);
-      ctx.moveTo(0, r * 0.68); ctx.lineTo(0, r * 1.18);
+      const tickOut = Math.min(r * 1.18, r * 0.68 + 14);
+      ctx.moveTo(-tickOut, 0); ctx.lineTo(-r * 0.68, 0);
+      ctx.moveTo(r * 0.68, 0); ctx.lineTo(tickOut, 0);
+      ctx.moveTo(0, -tickOut); ctx.lineTo(0, -r * 0.68);
+      ctx.moveTo(0, r * 0.68); ctx.lineTo(0, tickOut);
       ctx.stroke();
     } else {
       // Diffuse / Emission / Reflection Nebula / HII / Cl+N / SNR:
-      // Astro2001 luminous green contour (organic isophote contour for large nebulae, crisp rounded contour for compact ones)
-      const r = Math.min(44, Math.max(5.5, semiMajPx * 0.72));
+      // True angular-scale luminous green contour (scales proportionally with zoom!)
+      const rx = Math.min(maxDimPx, Math.max(5.5, semiMajPx));
+      const ry = Math.min(maxDimPx, Math.max(4.5, Math.min(rx, semiMinPx)));
+      const aAngle = Math.atan2(majVecY, majVecX);
+      ctx.globalAlpha *= bigFade(rx);
+      ctx.lineWidth = rx > 120 ? 1.4 : 1.18;
       const col = nightVision ? '#ff523a' : '#73da78';
       labelColor = nightVision ? '#ff7458' : '#88e88d';
       ctx.translate(x, y);
+      ctx.rotate(aAngle);
       ctx.strokeStyle = col;
 
-      if (r >= 11) {
-        // Organic deterministic 10-vertex isophote contour seeded by catalog ID (like Astro2001 nebula outlines)
+      if (rx >= 11) {
+        // Organic deterministic 12-vertex isophote contour seeded by catalog ID
         const seedStr = messier || id || 'NEB';
         let seed = 0;
         for (let s = 0; s < seedStr.length; s++) {
           seed = (seed * 31 + seedStr.charCodeAt(s)) & 0xffff;
         }
         const nPts = 12;
-        const rx = r;
-        const ry = Math.max(r * 0.58, Math.min(r, semiMinPx * 0.72));
         const pts = [];
         for (let k = 0; k < nPts; k++) {
           const ang = (k / nPts) * Math.PI * 2;
-          const wave = 0.84 + 0.24 * Math.sin(ang * 2 + (seed % 7)) + 0.12 * Math.cos(ang * 3 + (seed % 13));
+          const wave = 0.88 + 0.16 * Math.sin(ang * 2 + (seed % 7)) + 0.08 * Math.cos(ang * 3 + (seed % 13));
           pts.push({
             px: Math.cos(ang) * rx * wave,
             py: Math.sin(ang) * ry * wave
@@ -1626,9 +1659,13 @@ export class SkyRenderer {
         const second = pts[1];
         ctx.quadraticCurveTo(first.px, first.py, (first.px + second.px) * 0.5, (first.py + second.py) * 0.5);
         ctx.closePath();
+        if (rx <= 1200) {
+          ctx.fillStyle = nightVision ? 'rgba(255, 82, 58, 0.035)' : 'rgba(115, 218, 120, 0.04)';
+          ctx.fill();
+        }
         ctx.stroke();
       } else {
-        const s = r * 0.82;
+        const s = rx * 0.85;
         ctx.beginPath();
         if (ctx.roundRect) {
           ctx.roundRect(-s, -s, s * 2, s * 2, 2.2);
@@ -2443,6 +2480,23 @@ export class SkyRenderer {
   /**
    * 13. Selection Reticle
    */
+  _renderHoverReticle(ctx, hovered, nightVision) {
+    if (!hovered || !Number.isFinite(hovered.x) || !Number.isFinite(hovered.y)) return;
+    const r = 13;
+    const col = nightVision ? 'rgba(255, 92, 66, 0.72)' : 'rgba(130, 212, 255, 0.72)';
+    ctx.save();
+    ctx.strokeStyle = col;
+    ctx.lineWidth = 1.25;
+    for (let k = 0; k < 4; k++) {
+      const a0 = k * (Math.PI * 0.5) + 0.34;
+      const a1 = (k + 1) * (Math.PI * 0.5) - 0.34;
+      ctx.beginPath();
+      ctx.arc(hovered.x, hovered.y, r, a0, a1);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
   _renderSelectionReticle(ctx, state, projectRaDec, nightVision) {
     const sel = state.selectedObject;
     if (!sel) return;
@@ -2455,20 +2509,42 @@ export class SkyRenderer {
     }
     if (!p || !p.visible) return;
 
-    const r = 15;
+    const r = 16;
     const col = nightVision ? '#ff4428' : '#ffd15c';
     ctx.save();
-    ctx.strokeStyle = col;
-    ctx.lineWidth = 1.6;
+    ctx.translate(p.x, p.y);
 
-    // Animated or crisp 4-corner astronomical reticle
+    // Subtle soft radial halo
+    const glow = ctx.createRadialGradient(0, 0, 2, 0, 0, r + 9);
+    glow.addColorStop(0, nightVision ? 'rgba(255, 68, 40, 0.16)' : 'rgba(255, 209, 92, 0.14)');
+    glow.addColorStop(1, 'rgba(0, 0, 0, 0)');
+    ctx.fillStyle = glow;
+    ctx.beginPath();
+    ctx.arc(0, 0, r + 9, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Precision 4-arc observatory reticle + 4 outer cardinal ticks
+    ctx.strokeStyle = col;
+    ctx.lineWidth = 1.65;
     for (let k = 0; k < 4; k++) {
-      const a0 = k * (Math.PI * 0.5) + 0.22;
-      const a1 = (k + 1) * (Math.PI * 0.5) - 0.22;
+      const a0 = k * (Math.PI * 0.5) + 0.24;
+      const a1 = (k + 1) * (Math.PI * 0.5) - 0.24;
       ctx.beginPath();
-      ctx.arc(p.x, p.y, r, a0, a1);
+      ctx.arc(0, 0, r, a0, a1);
       ctx.stroke();
     }
+
+    ctx.lineWidth = 1.2;
+    ctx.globalAlpha = 0.85;
+    const tickIn = r + 3;
+    const tickOut = r + 7;
+    ctx.beginPath();
+    ctx.moveTo(0, -tickIn); ctx.lineTo(0, -tickOut);
+    ctx.moveTo(0, tickIn); ctx.lineTo(0, tickOut);
+    ctx.moveTo(-tickIn, 0); ctx.lineTo(-tickOut, 0);
+    ctx.moveTo(tickIn, 0); ctx.lineTo(tickOut, 0);
+    ctx.stroke();
+
     ctx.restore();
   }
 

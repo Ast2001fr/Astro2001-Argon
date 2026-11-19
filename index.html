@@ -11,13 +11,54 @@
   <link rel="apple-touch-icon" href="assets/icons/icon-192.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/styles.css?v=12">
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/styles.css?v=13">
 </head>
 <body>
   <div id="app-shell">
     <!-- Fullscreen Interactive Sky & 3D Solar System Canvas -->
     <canvas id="sky-canvas" aria-label="Carte du ciel interactive"></canvas>
+
+    <!-- Floating Hover Object Tooltip (follows cursor over stars, planets, DSOs, craters) -->
+    <div id="sky-hover-tip" class="sky-hover-tip hidden" role="status" aria-live="polite"></div>
+
+    <!-- Floating Quick-Action Sky Overlays & Live Cursor Telemetry (Bottom-Right) -->
+    <div id="sky-hud-bottom-right" class="sky-hud-br">
+      <div id="quick-sky-bar" class="quick-sky-bar" role="toolbar" aria-label="Raccourcis calques du ciel">
+        <button type="button" class="qsky-btn active" data-quick-toggle="constellations" title="Constellations (C)">
+          <svg viewBox="0 0 24 24" width="14" height="14"><path d="M5 18l5-8 5 4 4-9" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><circle cx="5" cy="18" r="1.5" fill="currentColor"/><circle cx="10" cy="10" r="1.5" fill="currentColor"/><circle cx="15" cy="14" r="1.5" fill="currentColor"/><circle cx="19" cy="5" r="1.5" fill="currentColor"/></svg>
+          <span>Const.</span>
+        </button>
+        <button type="button" class="qsky-btn active" data-quick-toggle="dso" title="Ciel profond — Galaxies, Nébuleuses, Amas (D)">
+          <svg viewBox="0 0 24 24" width="14" height="14"><ellipse cx="12" cy="12" rx="8.5" ry="4.5" transform="rotate(-28 12 12)" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="12" cy="12" r="1.7" fill="currentColor"/></svg>
+          <span>DSO</span>
+        </button>
+        <button type="button" class="qsky-btn" data-quick-toggle="eqGrid" title="Grille équatoriale AD/Déc (E)">
+          <svg viewBox="0 0 24 24" width="14" height="14"><circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="1.5"/><ellipse cx="12" cy="12" rx="4.2" ry="8.5" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M3.8 12h16.4" stroke="currentColor" stroke-width="1.3"/></svg>
+          <span>Grille</span>
+        </button>
+        <button type="button" class="qsky-btn" data-quick-toggle="dss2" title="Basculer le fond photographique DSS2 HiPS">
+          <svg viewBox="0 0 24 24" width="14" height="14"><rect x="3.5" y="5" width="17" height="14" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.5"/><circle cx="9" cy="10" r="1.5" fill="currentColor"/><path d="M4.5 16.5l4.5-4 3.5 3 2.5-2.2 4.5 3.2" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>
+          <span>DSS2</span>
+        </button>
+        <button type="button" class="qsky-btn active" data-quick-toggle="atmosphere" title="Atmosphère &amp; diffusion de Rayleigh (A)">
+          <svg viewBox="0 0 24 24" width="14" height="14"><path d="M4 17a8 8 0 0 1 16 0" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><path d="M7 17a5 5 0 0 1 10 0" fill="none" stroke="currentColor" stroke-width="1.3" opacity="0.65"/><path d="M3 20h18" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+          <span>Atmo</span>
+        </button>
+        <span class="qsky-div" aria-hidden="true"></span>
+        <button type="button" id="btn-zen-mode" class="qsky-btn" title="Mode Cinéma — masquer l'interface (H)">
+          <svg viewBox="0 0 24 24" width="14" height="14"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+      </div>
+      <div id="cursor-telemetry" class="cursor-telemetry mono" aria-hidden="true"></div>
+    </div>
+
+    <!-- Zen / Cinema Mode Floating Restore Button -->
+    <button type="button" id="btn-exit-zen" class="exit-zen-btn hidden" title="Afficher l'interface (H)">
+      <svg viewBox="0 0 24 24" width="14" height="14"><path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <span>Interface</span>
+      <kbd>H</kbd>
+    </button>
 
     <!-- ====================================================================
          TOP BAR (#topbar) : Brand · Unified Search (⌘K) · 5 Views · FOV · Theme
@@ -313,6 +354,6 @@
     </div>
   </div>
 
-  <script type="module" src="js/app.js?v=12"></script>
+  <script type="module" src="js/app.js?v=13"></script>
 </body>
 </html>

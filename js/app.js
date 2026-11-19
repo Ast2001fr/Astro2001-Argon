@@ -511,6 +511,15 @@ export class PlanetariumApp {
         obj.az = s.az;
         obj.data = s;
       }
+    } else if (obj.type === 'dso' && Array.isArray(obj.data)) {
+      if (obj.ra === undefined || obj.ra === null) obj.ra = obj.data[4];
+      if (obj.dec === undefined || obj.dec === null) obj.dec = obj.data[5];
+      if (obj.mag === undefined || obj.mag === null) obj.mag = obj.data[6];
+      if (obj.ra !== undefined && obj.dec !== undefined) {
+        const hor = equatorialToHorizontal(obj.ra, obj.dec, this.state.lstDeg, this.state.observer.lat);
+        obj.alt = hor.alt;
+        obj.az = hor.az;
+      }
     } else if (obj.ra !== undefined && obj.dec !== undefined) {
       const hor = equatorialToHorizontal(obj.ra, obj.dec, this.state.lstDeg, this.state.observer.lat);
       obj.alt = hor.alt;
@@ -530,6 +539,14 @@ export class PlanetariumApp {
     document.querySelectorAll('[data-toggle-key]').forEach(btn => {
       const k = btn.getAttribute('data-toggle-key');
       btn.classList.toggle('active', !!this.state.toggles[k]);
+    });
+    document.querySelectorAll('[data-quick-toggle]').forEach(btn => {
+      const k = btn.getAttribute('data-quick-toggle');
+      if (k === 'dss2') {
+        btn.classList.toggle('active', this.state.backgroundSurvey === 'dss2');
+      } else {
+        btn.classList.toggle('active', !!this.state.toggles[k]);
+      }
     });
   }
 
@@ -1024,6 +1041,34 @@ export class PlanetariumApp {
     };
     dockTrack?.addEventListener('pointerup', endDockScrub);
     dockTrack?.addEventListener('pointercancel', endDockScrub);
+
+    // Quick Sky Overlay Toolbar (bottom-right floating pills)
+    document.querySelectorAll('[data-quick-toggle]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const key = btn.getAttribute('data-quick-toggle');
+        if (key === 'dss2') {
+          const next = this.state.backgroundSurvey === 'dss2' ? 'milkyway' : 'dss2';
+          this.state.backgroundSurvey = next;
+          btn.classList.toggle('active', next === 'dss2');
+          this.saveSettings();
+          this.requestRender();
+        } else if (key) {
+          this.toggleLayer(key);
+        }
+      });
+    });
+
+    // Cinema / Zen Mode (hide/show all HUD chrome)
+    const toggleZen = () => {
+      const shell = document.getElementById('app-shell');
+      if (!shell) return;
+      const isZen = shell.classList.toggle('zen-mode');
+      document.getElementById('btn-zen-mode')?.classList.toggle('active', isZen);
+      document.getElementById('btn-exit-zen')?.classList.toggle('hidden', !isZen);
+    };
+    this._toggleZenMode = toggleZen;
+    document.getElementById('btn-zen-mode')?.addEventListener('click', toggleZen);
+    document.getElementById('btn-exit-zen')?.addEventListener('click', toggleZen);
   }
 
   _bindCanvasInteraction() {
@@ -1048,7 +1093,10 @@ export class PlanetariumApp {
     });
 
     this.canvas.addEventListener('pointermove', (e) => {
-      if (!isDragging) return;
+      if (!isDragging) {
+        this._handleCanvasHover(e.clientX, e.clientY);
+        return;
+      }
       const now = performance.now();
       const dx = e.clientX - lastX;
       const dy = e.clientY - lastY;
@@ -1058,6 +1106,7 @@ export class PlanetariumApp {
           return;
         }
         hasMovedBeyondTap = true;
+        this._clearCanvasHover();
       }
 
       lastX = e.clientX;
@@ -1096,6 +1145,7 @@ export class PlanetariumApp {
 
     this.canvas.addEventListener('pointerup', finishDrag);
     this.canvas.addEventListener('pointercancel', finishDrag);
+    this.canvas.addEventListener('pointerleave', () => this._clearCanvasHover());
 
     this.canvas.addEventListener('wheel', (e) => {
       e.preventDefault();
@@ -1112,6 +1162,95 @@ export class PlanetariumApp {
       this._updateFovChip();
       this.requestRender();
     }, { passive: false });
+  }
+
+  _handleCanvasHover(clientX, clientY) {
+    const now = performance.now();
+    if (this._lastHoverTime && now - this._lastHoverTime < 28) return;
+    this._lastHoverTime = now;
+
+    // 1. Live Cursor Astronomical Telemetry (RA/Dec + Alt/Az)
+    const skyPos = this.viewport.unprojectScreenToSky(clientX, clientY);
+    const telEl = document.getElementById('cursor-telemetry');
+    if (telEl) {
+      if (skyPos) {
+        const raH = (((skyPos.raDeg / 15) % 24) + 24) % 24;
+        const rh = Math.floor(raH);
+        const rm = Math.floor((raH - rh) * 60);
+        const dSign = skyPos.decDeg >= 0 ? '+' : '−';
+        const dAbs = Math.abs(skyPos.decDeg);
+        const dd = Math.floor(dAbs);
+        const dm = Math.floor((dAbs - dd) * 60);
+        const comp = COMPASS_DIRS[Math.round(((skyPos.azDeg % 360) / 22.5)) % 16] || '';
+        const altSign = skyPos.altDeg >= 0 ? '+' : '';
+        telEl.innerHTML = `
+          <span class="tel-seg"><span class="tel-k">AD</span> ${String(rh).padStart(2, '0')}h${String(rm).padStart(2, '0')}m</span>
+          <span class="tel-sep">·</span>
+          <span class="tel-seg"><span class="tel-k">Déc</span> ${dSign}${String(dd).padStart(2, '0')}°${String(dm).padStart(2, '0')}′</span>
+          <span class="tel-sep">·</span>
+          <span class="tel-seg"><span class="tel-k">H</span> ${altSign}${skyPos.altDeg.toFixed(1)}°</span>
+          <span class="tel-seg"><span class="tel-k">Az</span> ${skyPos.azDeg.toFixed(0)}° ${comp}</span>
+        `;
+        telEl.classList.add('visible');
+      } else {
+        telEl.classList.remove('visible');
+      }
+    }
+
+    // 2. Object Hover Detection + Precision Reticle + Floating Tooltip
+    const picked = this.renderer.pickObjectAt(clientX, clientY);
+    const prevId = this.state.hoveredObject ? this.state.hoveredObject.id : null;
+    const nextId = picked ? picked.id : null;
+
+    const tipEl = document.getElementById('sky-hover-tip');
+    if (picked) {
+      this.canvas.style.cursor = 'pointer';
+      if (tipEl) {
+        const typeMap = {
+          planet: picked.lunarFeature ? 'Relief lunaire' : 'Système solaire',
+          star: 'Étoile',
+          dso: picked.messier ? `Messier · ${picked.data?.[3] || 'DSO'}` : (picked.data?.[3] || 'Ciel profond'),
+          satellite: 'Satellite',
+          asteroid: 'Astéroïde'
+        };
+        const magNum = picked.mag ?? (Array.isArray(picked.data) ? picked.data[6] : picked.data?.mag);
+        const magTxt = (magNum !== undefined && magNum !== null && Number.isFinite(Number(magNum)))
+          ? `mag ${Number(magNum).toFixed(1)}`
+          : '';
+        const titleTxt = picked.lunarFeature ? picked.lunarFeature.name : (picked.name || picked.id);
+        tipEl.innerHTML = `
+          <span class="hover-tip-name">${titleTxt}</span>
+          <span class="hover-tip-meta">${typeMap[picked.type] || 'Astre'}${magTxt ? ` · <span class="mono">${magTxt}</span>` : ''}</span>
+        `;
+        const pad = 16;
+        const maxX = window.innerWidth - 220;
+        const maxY = window.innerHeight - 90;
+        const tx = Math.min(maxX, clientX + pad);
+        const ty = Math.min(maxY, Math.max(60, clientY - 14));
+        tipEl.style.transform = `translate3d(${tx}px, ${ty}px, 0)`;
+        tipEl.classList.remove('hidden');
+      }
+    } else {
+      this.canvas.style.cursor = 'grab';
+      if (tipEl) tipEl.classList.add('hidden');
+    }
+
+    if (prevId !== nextId) {
+      this.state.hoveredObject = picked || null;
+      this.requestRender();
+    }
+  }
+
+  _clearCanvasHover() {
+    const tipEl = document.getElementById('sky-hover-tip');
+    if (tipEl) tipEl.classList.add('hidden');
+    const telEl = document.getElementById('cursor-telemetry');
+    if (telEl) telEl.classList.remove('visible');
+    this.canvas.style.cursor = 'grab';
+    if (this.state.hoveredObject) {
+      this.state.hoveredObject = null;
+      this.requestRender();
+    }
   }
 
   /**
@@ -1142,6 +1281,13 @@ export class PlanetariumApp {
       // Ignore single-key shortcuts when typing in an input or select
       const tag = (e.target && e.target.tagName) ? e.target.tagName.toLowerCase() : '';
       if (tag === 'input' || tag === 'textarea' || tag === 'select') return;
+
+      // Cinema / Zen mode toggle on 'H'
+      if (e.key.toLowerCase() === 'h' && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        e.preventDefault();
+        if (this._toggleZenMode) this._toggleZenMode();
+        return;
+      }
 
       const keyNorm = normalizeShortcutKey(e.key === ' ' ? 'Space' : e.key);
       const feat = shortcutMap.get(keyNorm);
@@ -1582,7 +1728,9 @@ export class PlanetariumApp {
 
   _computeFormattedRTS(raDeg, decDeg) {
     const obs = this.state.observer;
-    const horizonFn = (az) => this.state.toggles.horizonProfile ? this.getHorizonElevationAtAz(az) : 0;
+    const horizonFn = this.state.toggles.horizonProfile
+      ? (az) => this.getHorizonElevationAtAz(az)
+      : -0.5667; // Standard atmospheric refraction (34') at mathematical horizon
     try {
       const res = computeRiseTransitSet(
         () => ({ ra: raDeg, dec: decDeg }),
@@ -1603,19 +1751,50 @@ export class PlanetariumApp {
       };
 
       const maxAlt = res.maxAlt ?? (90 - Math.abs(obs.lat - decDeg));
+      const minAlt = res.minAlt ?? (obs.lat + decDeg - 90);
+      const isCircumpolar = !!res.isCircumpolar;
+      const neverRises = !!res.neverRises;
+
       let statusText = 'Visible cette nuit';
-      if (res.circumpolar) statusText = 'Circumpolaire (toujours visible)';
-      else if (res.neverRises) statusText = 'Sous l\'horizon (ne se lève pas)';
+      if (isCircumpolar) statusText = 'Circumpolaire (ne se couche pas)';
+      else if (neverRises) statusText = 'Sous l\'horizon (ne se lève pas)';
+
+      // Compute 25-point noon-to-noon altitude curve for the Object Card SVG mini-chart
+      const cur = this.state.date;
+      const noonStart = new Date(cur);
+      if (cur.getHours() < 12) noonStart.setDate(noonStart.getDate() - 1);
+      noonStart.setHours(12, 0, 0, 0);
+      const startMs = noonStart.getTime();
+      const spanMs = 24 * 3600000;
+      const nowFrac = Math.max(0, Math.min(1, (cur.getTime() - startMs) / spanMs));
+      const sunRa = this.state.sun?.ra ?? 180;
+      const sunDec = this.state.sun?.dec ?? 0;
+
+      const nightCurve = [];
+      for (let i = 0; i <= 24; i++) {
+        const frac = i / 24;
+        const jdStep = dateToJD(new Date(startMs + frac * spanMs));
+        const lstStep = getLST(jdStep, obs.lon);
+        const hObj = equatorialToHorizontal(raDeg, decDeg, lstStep, obs.lat);
+        const hSun = equatorialToHorizontal(sunRa, sunDec, lstStep, obs.lat);
+        const hLim = this.state.toggles.horizonProfile ? this.getHorizonElevationAtAz(hObj.az) : 0;
+        nightCurve.push({ frac, alt: hObj.alt, sunAlt: hSun.alt, horizonAlt: hLim });
+      }
 
       return {
-        riseStr: fmtHM(res.riseJD),
+        riseStr: isCircumpolar ? 'Circump.' : (neverRises ? '—' : fmtHM(res.riseJD)),
         transitStr: fmtHM(res.transitJD),
-        setStr: fmtHM(res.setJD),
+        setStr: isCircumpolar ? 'Circump.' : (neverRises ? '—' : fmtHM(res.setJD)),
         maxAltStr: `${Math.max(-90, Math.min(90, maxAlt)).toFixed(0)}°`,
-        statusText
+        minAltStr: `${Math.max(-90, Math.min(90, minAlt)).toFixed(1)}°`,
+        isCircumpolar,
+        neverRises,
+        statusText,
+        nightCurve,
+        nowFrac
       };
     } catch (_) {
-      return { riseStr: '—', transitStr: '—', setStr: '—', maxAltStr: '', statusText: 'Visible' };
+      return { riseStr: '—', transitStr: '—', setStr: '—', maxAltStr: '', statusText: 'Visible', nightCurve: [], nowFrac: 0.5 };
     }
   }
 

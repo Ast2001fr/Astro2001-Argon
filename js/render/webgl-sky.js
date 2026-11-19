@@ -257,12 +257,21 @@ void main() {
   }
 
   float intensity = 0.0;
+  vec3 col = vColor;
+  float isLightStar = step(0.6, vColor.r + vColor.g + vColor.b);
   if (vHaloRatio < 0.99) {
-    // Bright star with crisp core + exponential atmospheric halo
+    // Bright star with hot incandescent core + colored spectral halo + delicate diffraction glint
     float coreDist = dist / vHaloRatio;
-    float core = 1.0 - smoothstep(0.65, 1.05, coreDist);
-    float halo = exp(-dist * dist * 3.8) * 0.38;
-    intensity = clamp(core + halo, 0.0, 1.0);
+    float core = 1.0 - smoothstep(0.55, 1.05, coreDist);
+    float halo = exp(-dist * dist * 4.2) * 0.42;
+    float spike = 0.0;
+    if (vHaloRatio < 0.36 && isLightStar > 0.5) {
+      float ax = exp(-abs(uv.y) * 28.0) * exp(-abs(uv.x) * 3.0);
+      float ay = exp(-abs(uv.x) * 28.0) * exp(-abs(uv.y) * 3.0);
+      spike = (ax + ay) * 0.24 * (1.0 - smoothstep(0.55, 1.0, dist));
+    }
+    intensity = clamp(core + halo + spike, 0.0, 1.0);
+    col = mix(vColor, vec3(1.0), core * 0.52 * isLightStar);
   } else {
     // Faint/medium star: crisp anti-aliased Airy disk
     intensity = 1.0 - smoothstep(0.42, 1.0, dist);
@@ -272,7 +281,7 @@ void main() {
   if (a <= 0.005) {
     discard;
   }
-  gl_FragColor = vec4(vColor * a, a);
+  gl_FragColor = vec4(col * a, a);
 }
 `;
 

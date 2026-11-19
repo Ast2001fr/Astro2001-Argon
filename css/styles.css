@@ -2193,4 +2193,406 @@ svg.ic {
   .train-chip {
     display: none;
   }
+  .qsky-btn span {
+    display: none;
+  }
+}
+
+/* ==========================================================================
+ * 9. EXTRAORDINARY OBSERVATORY GLASS ISLANDS & PRECISION HUD LAYER
+ * ========================================================================== */
+:root {
+  --font-display: 'Space Grotesk', 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+  --glass-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  --glass-shadow: 0 14px 38px rgba(0, 0, 0, 0.56), 0 1px 2px rgba(0, 0, 0, 0.45);
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+[data-theme="nocturne"] {
+  --glass-highlight: inset 0 1px 0 rgba(255, 70, 50, 0.14);
+}
+
+/* Display typography for brand, headers, and celestial object titles */
+.brand-title,
+.object-card-title,
+.modal-header h3 {
+  font-family: var(--font-display);
+}
+
+/* Floating Glass Topbar Island */
+#topbar {
+  top: 10px;
+  left: 12px;
+  right: 12px;
+  height: 46px;
+  border-radius: 14px;
+  border: 1px solid var(--border-subtle);
+  box-shadow: var(--glass-shadow), var(--glass-highlight);
+  backdrop-filter: blur(24px) saturate(165%);
+  -webkit-backdrop-filter: blur(24px) saturate(165%);
+  transition: transform 0.38s var(--ease-out-expo), opacity 0.3s ease, border-color 0.2s ease;
+}
+
+.brand-glyph {
+  filter: drop-shadow(0 0 8px rgba(232, 180, 90, 0.35));
+  transition: transform 0.45s var(--ease-out-expo);
+}
+
+.brand-mark:hover .brand-glyph {
+  transform: rotate(22deg) scale(1.06);
+}
+
+.view-tab.active {
+  box-shadow: 0 0 14px var(--accent-soft), inset 0 1px 0 rgba(255, 255, 255, 0.12);
+}
+
+/* Floating Left Observatory Rail Island */
+#rail {
+  top: 66px;
+  bottom: 78px;
+  left: 12px;
+  width: 58px;
+  border-radius: 14px;
+  border: 1px solid var(--border-subtle);
+  box-shadow: var(--glass-shadow), var(--glass-highlight);
+  backdrop-filter: blur(24px) saturate(165%);
+  -webkit-backdrop-filter: blur(24px) saturate(165%);
+  transition: transform 0.38s var(--ease-out-expo), opacity 0.3s ease;
+}
+
+.rail-btn {
+  position: relative;
+  width: 48px;
+  border-radius: 10px;
+}
+
+.rail-btn.active::before {
+  content: '';
+  position: absolute;
+  left: -4px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 3px;
+  height: 18px;
+  border-radius: 99px;
+  background: var(--accent);
+  box-shadow: 0 0 10px var(--accent);
+}
+
+/* Optical Train Pill aligned with floating islands */
+.train-chip {
+  top: 66px;
+  left: 82px;
+  border-radius: 999px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.42), var(--glass-highlight);
+  backdrop-filter: blur(18px) saturate(155%);
+  -webkit-backdrop-filter: blur(18px) saturate(155%);
+  transition: transform 0.38s var(--ease-out-expo), opacity 0.3s ease, border-color 0.18s ease, background 0.18s ease;
+}
+
+/* Left Slide-Over Drawer aligned with floating islands */
+.left-drawer {
+  top: 66px;
+  left: 80px;
+  bottom: 78px;
+  transition: transform 0.32s var(--ease-out-expo), opacity 0.24s ease;
+}
+
+.left-drawer .modal-card {
+  border-radius: 16px;
+  box-shadow: var(--glass-shadow), var(--glass-highlight);
+  backdrop-filter: blur(26px) saturate(165%);
+  -webkit-backdrop-filter: blur(26px) saturate(165%);
+}
+
+/* Right Object Card Inspector aligned with floating islands */
+.object-card {
+  top: 66px;
+  right: 12px;
+  bottom: 126px;
+  border-radius: 16px;
+  box-shadow: var(--glass-shadow), var(--glass-highlight);
+  backdrop-filter: blur(26px) saturate(165%);
+  -webkit-backdrop-filter: blur(26px) saturate(165%);
+  animation: cardSlideIn 0.28s var(--ease-out-expo);
+  transition: transform 0.38s var(--ease-out-expo), opacity 0.3s ease;
+}
+
+@keyframes cardSlideIn {
+  from {
+    opacity: 0;
+    transform: translateX(18px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+  }
+}
+
+.object-card-header {
+  background: radial-gradient(circle at 12% 0%, var(--accent-soft), transparent 68%);
+}
+
+.obj-section-head-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.obj-section-head-row .obj-section-title {
+  margin-bottom: 0;
+}
+
+.rts-status-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 7px;
+  border-radius: 999px;
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.rts-status-badge.circumpolar {
+  color: var(--good);
+  background: rgba(69, 208, 144, 0.14);
+  border: 1px solid rgba(69, 208, 144, 0.35);
+}
+
+.rts-status-badge.never {
+  color: var(--poor);
+  background: rgba(240, 100, 100, 0.14);
+  border: 1px solid rgba(240, 100, 100, 0.35);
+}
+
+/* 24h Altitude-vs-Time Night Curve SVG Widget */
+.alt-curve-card {
+  margin-top: 9px;
+  padding: 6px 6px 4px;
+  background: rgba(5, 9, 18, 0.45);
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+}
+
+.alt-curve-svg {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+/* Floating Bottom Astronomical Chronometer Dock */
+#timebar.dock {
+  left: 12px;
+  right: 12px;
+  bottom: 10px;
+  height: 58px;
+  border-radius: 15px;
+  border: 1px solid var(--border-subtle);
+  box-shadow: var(--glass-shadow), var(--glass-highlight);
+  backdrop-filter: blur(24px) saturate(165%);
+  -webkit-backdrop-filter: blur(24px) saturate(165%);
+  transition: transform 0.38s var(--ease-out-expo), opacity 0.3s ease;
+}
+
+.dock-play.active {
+  box-shadow: 0 0 16px var(--accent-soft);
+}
+
+/* Floating Bottom-Right Quick Sky Overlays & Live Telemetry */
+.sky-hud-br {
+  position: fixed;
+  right: 14px;
+  bottom: 78px;
+  z-index: 23;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  pointer-events: none;
+  transition: transform 0.38s var(--ease-out-expo), opacity 0.3s ease;
+}
+
+.quick-sky-bar {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 4px;
+  background: var(--bg-glass);
+  backdrop-filter: blur(20px) saturate(155%);
+  -webkit-backdrop-filter: blur(20px) saturate(155%);
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.48), var(--glass-highlight);
+  pointer-events: auto;
+}
+
+.qsky-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 28px;
+  padding: 0 8px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 500;
+  transition: all 0.16s ease;
+}
+
+.qsky-btn:hover {
+  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.qsky-btn.active {
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-color: var(--border-accent);
+}
+
+.qsky-div {
+  width: 1px;
+  height: 16px;
+  margin: 0 2px;
+  background: var(--border-subtle);
+}
+
+.cursor-telemetry {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 4px 10px;
+  background: rgba(7, 11, 20, 0.72);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid var(--border-subtle);
+  border-radius: 999px;
+  font-size: 10.5px;
+  color: var(--text-secondary);
+  opacity: 0;
+  transform: translateY(4px);
+  transition: opacity 0.2s ease, transform 0.2s ease;
+  pointer-events: none;
+}
+
+.cursor-telemetry.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.cursor-telemetry .tel-k {
+  color: var(--accent);
+  font-weight: 600;
+  margin-right: 2px;
+}
+
+.cursor-telemetry .tel-sep {
+  opacity: 0.35;
+}
+
+/* Floating Sky Object Hover Tooltip */
+.sky-hover-tip {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 45;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 6px 10px;
+  max-width: 220px;
+  background: var(--bg-glass-strong);
+  backdrop-filter: blur(16px) saturate(160%);
+  -webkit-backdrop-filter: blur(16px) saturate(160%);
+  border: 1px solid var(--border-accent);
+  border-radius: 9px;
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.55), var(--glass-highlight);
+  pointer-events: none;
+  will-change: transform;
+}
+
+.hover-tip-name {
+  font-family: var(--font-display);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+  line-height: 1.25;
+}
+
+.hover-tip-meta {
+  font-size: 10.5px;
+  color: var(--text-secondary);
+}
+
+/* Cinema / Zen Mode (Press H) */
+#app-shell.zen-mode #topbar {
+  opacity: 0;
+  transform: translateY(-20px);
+  pointer-events: none;
+}
+
+#app-shell.zen-mode #rail {
+  opacity: 0;
+  transform: translateX(-20px);
+  pointer-events: none;
+}
+
+#app-shell.zen-mode #timebar.dock {
+  opacity: 0;
+  transform: translateY(20px);
+  pointer-events: none;
+}
+
+#app-shell.zen-mode .train-chip,
+#app-shell.zen-mode .sky-hud-br,
+#app-shell.zen-mode .left-drawer,
+#app-shell.zen-mode .object-card {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.exit-zen-btn {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 50;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 12px;
+  background: var(--bg-glass);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid var(--border-accent);
+  border-radius: 999px;
+  color: var(--text-primary);
+  font-size: 12px;
+  font-weight: 500;
+  box-shadow: var(--glass-shadow);
+  transition: all 0.2s ease;
+}
+
+.exit-zen-btn:hover {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+/* Crisp Accessibility Focus Rings & Reduced Motion */
+button:focus-visible,
+select:focus-visible,
+input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
 }

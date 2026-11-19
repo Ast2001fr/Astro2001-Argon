@@ -342,6 +342,59 @@ export class SkyViewport {
   }
 
   /**
+   * Universal inverse projection from screen (x, y) to Equatorial (raDeg, decDeg)
+   * and Horizontal (altDeg, azDeg) using the active 3x3 camera basis matrix.
+   * Works across terrestrial, celestial, telescope, and zenith views.
+   */
+  unprojectScreenToSky(x, y) {
+    if (this.viewMode === 'solarsystem' || !this.camX || !this.camY || !this.camZ) {
+      return null;
+    }
+    const dx = (x - this.cx) * this.flipX;
+    const dy = -(y - this.cy) * this.flipY;
+
+    let cx, cy, cz;
+    if (this.viewMode === 'celestial' && this.fov >= 45) {
+      const globeRadius = Math.min(this.width, this.height) * 0.44 * (90 / Math.max(25, this.fov));
+      const r2 = dx * dx + dy * dy;
+      if (r2 > globeRadius * globeRadius) return null;
+      cx = dx / globeRadius;
+      cy = dy / globeRadius;
+      cz = Math.sqrt(Math.max(0, 1 - cx * cx - cy * cy));
+    } else {
+      const twoF = 2 * this.focal;
+      if (!twoF) return null;
+      const tx = dx / twoF;
+      const ty = dy / twoF;
+      const r2 = tx * tx + ty * ty;
+      const invD = 1 / (1 + r2);
+      cx = 2 * tx * invD;
+      cy = 2 * ty * invD;
+      cz = (1 - r2) * invD;
+    }
+
+    const eqX = cx * this.camX[0] + cy * this.camY[0] + cz * this.camZ[0];
+    const eqY = cx * this.camX[1] + cy * this.camY[1] + cz * this.camZ[1];
+    const eqZ = Math.max(-1, Math.min(1, cx * this.camX[2] + cy * this.camY[2] + cz * this.camZ[2]));
+
+    const decDeg = Math.asin(eqZ) * RAD2DEG;
+    const raDeg = ((Math.atan2(eqY, eqX) * RAD2DEG) % 360 + 360) % 360;
+
+    // Horizontal coordinates via horX (East), horY (North), horZ (Zenith)
+    let altDeg = 0;
+    let azDeg = 0;
+    if (this.horX && this.horY && this.horZ) {
+      const eComp = eqX * this.horX[0] + eqY * this.horX[1] + eqZ * this.horX[2];
+      const nComp = eqX * this.horY[0] + eqY * this.horY[1] + eqZ * this.horY[2];
+      const zComp = Math.max(-1, Math.min(1, eqX * this.horZ[0] + eqY * this.horZ[1] + eqZ * this.horZ[2]));
+      altDeg = Math.asin(zComp) * RAD2DEG;
+      azDeg = ((Math.atan2(eComp, nComp) * RAD2DEG) % 360 + 360) % 360;
+    }
+
+    return { raDeg, decDeg, altDeg, azDeg };
+  }
+
+  /**
    * Project Equatorial coordinates (raDeg, decDeg) for the 'celestial' sphere view.
    * Supports both orthographic outer globe when zoomed out and stereographic when zoomed in.
    */
