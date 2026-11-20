@@ -113,6 +113,10 @@ export class ObjectCardUI {
           <svg class="ic" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="8" stroke-dasharray="3 3"/><path d="M12 8v8M8 12h8"/></svg>
           <span>Cadre</span>
         </button>
+        <button type="button" class="action-pill" id="btn-obj-measure" title="Mesurer la séparation angulaire et l'angle de position depuis cet astre (X)">
+          <svg class="ic" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 17L17 4l3 3L7 20l-3-3z"/><path d="M9.5 11.5l1.5 1.5M12.5 8.5l1.5 1.5M6.5 14.5l1.5 1.5"/></svg>
+          <span>Mesurer</span>
+        </button>
       </div>
 
       <div class="object-card-body">
@@ -295,6 +299,11 @@ export class ObjectCardUI {
       this.app.saveSettings();
       this.app.requestRender();
       this.render(this.app.state.selectedObject);
+    });
+    this.container.querySelector('#btn-obj-measure')?.addEventListener('click', () => {
+      if (this.app.startMeasureFromObject && this.app.state.selectedObject) {
+        this.app.startMeasureFromObject(this.app.state.selectedObject);
+      }
     });
 
     if (isJovianOrSaturnian) {

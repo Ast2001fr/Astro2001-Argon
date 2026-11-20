@@ -3,8 +3,8 @@
  * Progressive Web App Service Worker for offline operation and optional pack caching.
  */
 
-const CACHE_CORE = 'uranometrie-core-v13';
-const CACHE_PACKS = 'uranometrie-packs-v13';
+const CACHE_CORE = 'uranometrie-core-v14';
+const CACHE_PACKS = 'uranometrie-packs-v14';
 
 const CORE_ASSETS = [
   './',
@@ -16,6 +16,7 @@ const CORE_ASSETS = [
   './js/i18n.js',
   './js/i18n-fr.js',
   './js/astro/time.js',
+  './js/astro/measure.js',
   './js/astro/solar-system.js',
   './js/astro/sgp4.js',
   './js/astro/events.js',

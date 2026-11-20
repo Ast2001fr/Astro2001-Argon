@@ -9,7 +9,17 @@
 
 import { PlanetShaderRenderer } from './planet-shader.js?v=11';
 import { MilkyWayAndHipsRenderer } from './milkyway-hips.js?v=11';
-import { WebGLSkyAccelerator } from './webgl-sky.js?v=11';
+import { WebGLSkyAccelerator } from './webgl-sky.js?v=14';
+import {
+  raDecToUnitVec,
+  galacticToEquatorialUnitVec,
+  angularSepDeg,
+  positionAngleDeg,
+  greatCircleArc,
+  formatSeparation,
+  formatVisualScaleEquiv,
+  formatDeltaRaDec
+} from '../astro/measure.js?v=14';
 
 const DEG2RAD = Math.PI / 180;
 const RAD2DEG = 180 / Math.PI;
@@ -537,6 +547,15 @@ export class SkyRenderer {
     if (state.toggles.ecliptic) {
       this._renderEcliptic(ctx, state, projectRaDec, nightVision, isAlmanach);
     }
+    if (state.toggles.meridian) {
+      this._renderMeridian(ctx, state, nightVision, isAlmanach);
+    }
+    if (state.toggles.equator) {
+      this._renderCelestialEquator(ctx, state, projectRaDec, nightVision, isAlmanach);
+    }
+    if (state.toggles.galactic) {
+      this._renderGalacticPlane(ctx, state, nightVision, isAlmanach);
+    }
 
     // 4. Constellations (Official IAU Boundaries & Luminous Two-Pass Lines)
     if (state.catalogs.constellations) {
@@ -612,6 +631,9 @@ export class SkyRenderer {
     }
     if (state.selectedObject) {
       this._renderSelectionReticle(ctx, state, projectRaDec, nightVision);
+    }
+    if (state.ruler && (state.ruler.a || state.ruler.b)) {
+      this._renderRuler(ctx, state, projectRaDec, nightVision, isAlmanach);
     }
 
     // Restore Celestial Sphere or Telescope clip
@@ -979,6 +1001,351 @@ export class SkyRenderer {
       }
     }
     ctx.stroke();
+    ctx.restore();
+  }
+
+  /**
+   * 3b. Local Meridian (ETUDE-REGLE-REPERES §3.2):
+   * Great circle N (az=0°) -> Zenith (alt=90°) -> S (az=180°) -> Nadir (alt=-90°)
+   * with altitude ticks every 15° or 30° and a crisp Z zenith marker.
+   */
+  _renderMeridian(ctx, state, nightVision, isAlmanach = false) {
+    const { viewport } = this;
+    const clipGround = viewport.viewMode === 'terrestrial' && state.toggles.ground;
+    const maxJump = Math.max(viewport.width, viewport.height) * 0.35;
+    const strokeCol = nightVision
+      ? 'rgba(255, 92, 68, 0.44)'
+      : isAlmanach
+        ? 'rgba(55, 70, 92, 0.48)'
+        : 'rgba(155, 185, 220, 0.44)';
+    const labelCol = nightVision
+      ? 'rgba(255, 110, 86, 0.78)'
+      : isAlmanach
+        ? 'rgba(45, 58, 78, 0.78)'
+        : 'rgba(175, 204, 238, 0.78)';
+
+    const projHor = (altDeg, azDeg) => {
+      if (viewport.viewMode === 'celestial' && viewport.horX && viewport.horY && viewport.horZ) {
+        const a = altDeg * DEG2RAD;
+        const z = azDeg * DEG2RAD;
+        const ca = Math.cos(a), sa = Math.sin(a);
+        const e = ca * Math.sin(z), n = ca * Math.cos(z);
+        const ux = e * viewport.horX[0] + n * viewport.horY[0] + sa * viewport.horZ[0];
+        const uy = e * viewport.horX[1] + n * viewport.horY[1] + sa * viewport.horZ[1];
+        const uz = e * viewport.horX[2] + n * viewport.horY[2] + sa * viewport.horZ[2];
+        return viewport.projectUnitVec(ux, uy, uz);
+      }
+      return viewport.projectAltAz(altDeg, azDeg);
+    };
+
+    ctx.save();
+    ctx.strokeStyle = strokeCol;
+    ctx.lineWidth = 1.15;
+    ctx.setLineDash([5, 4]);
+    ctx.beginPath();
+
+    const phiStart = clipGround ? 0 : -90;
+    const phiEnd = clipGround ? 180 : 270;
+    let prev = null;
+    for (let phi = phiStart; phi <= phiEnd; phi += 5) {
+      let altDeg, azDeg;
+      if (phi >= 0 && phi <= 90) { altDeg = phi; azDeg = 0; }
+      else if (phi > 90 && phi <= 180) { altDeg = 180 - phi; azDeg = 180; }
+      else if (phi > 180) { altDeg = 180 - phi; azDeg = 180; }
+      else { altDeg = phi; azDeg = 0; }
+
+      const p = projHor(altDeg, azDeg);
+      if (p.visible) {
+        if (prev && Math.hypot(p.x - prev.x, p.y - prev.y) < maxJump) {
+          ctx.lineTo(p.x, p.y);
+        } else {
+          ctx.moveTo(p.x, p.y);
+        }
+        prev = p;
+      } else {
+        prev = null;
+      }
+    }
+    ctx.stroke();
+
+    ctx.setLineDash([]);
+    ctx.font = '500 10px "IBM Plex Mono", monospace';
+    ctx.fillStyle = labelCol;
+    const tickStep = viewport.fov < 45 ? 15 : 30;
+    for (const azSide of [0, 180]) {
+      for (let alt = tickStep; alt < 90; alt += tickStep) {
+        const p = projHor(alt, azSide);
+        if (p.visible && p.x > 24 && p.x < viewport.width - 24 && p.y > 60 && p.y < viewport.height - 64) {
+          ctx.beginPath();
+          ctx.moveTo(p.x - 3, p.y);
+          ctx.lineTo(p.x + 3, p.y);
+          ctx.stroke();
+          ctx.fillText(`${alt}°`, p.x + 6, p.y + 3);
+        }
+      }
+    }
+
+    const pZ = projHor(90, 0);
+    if (pZ.visible && pZ.x > 20 && pZ.x < viewport.width - 20 && pZ.y > 55 && pZ.y < viewport.height - 60) {
+      ctx.strokeStyle = labelCol;
+      ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      ctx.moveTo(pZ.x - 5, pZ.y); ctx.lineTo(pZ.x + 5, pZ.y);
+      ctx.moveTo(pZ.x, pZ.y - 5); ctx.lineTo(pZ.x, pZ.y + 5);
+      ctx.stroke();
+      ctx.fillText('Z', pZ.x + 7, pZ.y - 4);
+    }
+
+    ctx.restore();
+  }
+
+  /**
+   * 3c. Celestial Equator (ETUDE-REGLE-REPERES §3.2):
+   * δ = 0° great circle in soft cyan/blue with RA hour ticks (0h, 6h, 12h, 18h) when eqGrid is off.
+   */
+  _renderCelestialEquator(ctx, state, projectRaDec, nightVision, isAlmanach = false) {
+    const { viewport } = this;
+    const clipGround = viewport.viewMode === 'terrestrial' && state.toggles.ground;
+    const maxJump = Math.max(viewport.width, viewport.height) * 0.35;
+    const strokeCol = nightVision
+      ? 'rgba(255, 76, 56, 0.48)'
+      : isAlmanach
+        ? 'rgba(38, 102, 148, 0.55)'
+        : 'rgba(92, 186, 242, 0.48)';
+    const labelCol = nightVision
+      ? 'rgba(255, 106, 84, 0.82)'
+      : isAlmanach
+        ? 'rgba(32, 88, 128, 0.82)'
+        : 'rgba(130, 210, 255, 0.82)';
+
+    ctx.save();
+    ctx.strokeStyle = strokeCol;
+    ctx.lineWidth = 1.15;
+    ctx.setLineDash([10, 5]);
+    ctx.beginPath();
+
+    let prev = null;
+    for (let ra = 0; ra <= 360; ra += 5) {
+      const p = projectRaDec(ra % 360, 0);
+      if (p.visible && (!clipGround || p.alt === undefined || p.alt >= -0.5)) {
+        if (prev && Math.hypot(p.x - prev.x, p.y - prev.y) < maxJump) {
+          ctx.lineTo(p.x, p.y);
+        } else {
+          ctx.moveTo(p.x, p.y);
+        }
+        prev = p;
+      } else {
+        prev = null;
+      }
+    }
+    ctx.stroke();
+
+    if (!state.toggles.gridEquatorial) {
+      ctx.setLineDash([]);
+      ctx.font = '500 10px "IBM Plex Mono", monospace';
+      ctx.fillStyle = labelCol;
+      for (const h of [0, 6, 12, 18]) {
+        const p = projectRaDec(h * 15, 0);
+        if (p.visible && (!clipGround || p.alt === undefined || p.alt >= 0) &&
+            p.x > 24 && p.x < viewport.width - 30 && p.y > 58 && p.y < viewport.height - 64) {
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, 2.2, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.fillText(`Éq ${h}h`, p.x + 6, p.y - 4);
+        }
+      }
+    }
+
+    ctx.restore();
+  }
+
+  /**
+   * 3d. Galactic Plane (ETUDE-REGLE-REPERES §3.2):
+   * b = 0° great circle via exact IAU 1958 / Hipparcos transpose, in muted violet/lavender,
+   * plus Galactic Centre (l=0°, b=0° · Sgr A*) diamond marker.
+   */
+  _renderGalacticPlane(ctx, state, nightVision, isAlmanach = false) {
+    const { viewport } = this;
+    const clipGround = viewport.viewMode === 'terrestrial' && state.toggles.ground;
+    const maxJump = Math.max(viewport.width, viewport.height) * 0.35;
+    const strokeCol = nightVision
+      ? 'rgba(255, 72, 90, 0.45)'
+      : isAlmanach
+        ? 'rgba(116, 72, 168, 0.52)'
+        : 'rgba(182, 138, 248, 0.50)';
+    const labelCol = nightVision
+      ? 'rgba(255, 110, 120, 0.85)'
+      : isAlmanach
+        ? 'rgba(98, 56, 148, 0.85)'
+        : 'rgba(206, 174, 255, 0.88)';
+
+    ctx.save();
+    ctx.strokeStyle = strokeCol;
+    ctx.lineWidth = 1.15;
+    ctx.setLineDash([6, 4]);
+    ctx.beginPath();
+
+    let prev = null;
+    for (let l = 0; l <= 360; l += 5) {
+      const u = galacticToEquatorialUnitVec(l % 360, 0);
+      const p = viewport.projectUnitVec(u[0], u[1], u[2]);
+      if (p.visible && (!clipGround || p.alt === undefined || p.alt >= -0.5)) {
+        if (prev && Math.hypot(p.x - prev.x, p.y - prev.y) < maxJump) {
+          ctx.lineTo(p.x, p.y);
+        } else {
+          ctx.moveTo(p.x, p.y);
+        }
+        prev = p;
+      } else {
+        prev = null;
+      }
+    }
+    ctx.stroke();
+
+    const uGC = galacticToEquatorialUnitVec(0, 0);
+    const pGC = viewport.projectUnitVec(uGC[0], uGC[1], uGC[2]);
+    if (pGC.visible && (!clipGround || pGC.alt === undefined || pGC.alt >= -0.5) &&
+        pGC.x > 16 && pGC.x < viewport.width - 16 && pGC.y > 50 && pGC.y < viewport.height - 54) {
+      ctx.setLineDash([]);
+      ctx.strokeStyle = labelCol;
+      ctx.lineWidth = 1.3;
+      const d = 5.5;
+      ctx.beginPath();
+      ctx.moveTo(pGC.x, pGC.y - d);
+      ctx.lineTo(pGC.x + d, pGC.y);
+      ctx.lineTo(pGC.x, pGC.y + d);
+      ctx.lineTo(pGC.x - d, pGC.y);
+      ctx.closePath();
+      ctx.stroke();
+      ctx.font = '600 10px "IBM Plex Mono", monospace';
+      ctx.fillStyle = labelCol;
+      ctx.fillText('GC · Sgr A*', pGC.x + 8, pGC.y + 3);
+    }
+
+    ctx.restore();
+  }
+
+  /**
+   * 13b. Interactive Angular Measurement Ruler (ETUDE-REGLE-REPERES §3.1 & §4.1):
+   * True geodesic SLERP great-circle arc + endpoint reticles + safe-area midpoint pill.
+   */
+  _renderRuler(ctx, state, projectRaDec, nightVision, isAlmanach = false) {
+    const ruler = state.ruler;
+    if (!ruler || !ruler.a) return;
+    const ptA = ruler.a;
+    const ptB = ruler.b || ruler.hoverB;
+
+    const { viewport } = this;
+    const accent = nightVision ? '#ff4632' : isAlmanach ? '#8a5210' : '#f2ba5a';
+    const accentSoft = nightVision ? 'rgba(255, 70, 50, 0.22)' : isAlmanach ? 'rgba(138, 82, 16, 0.16)' : 'rgba(242, 186, 90, 0.20)';
+    const pillBg = nightVision ? 'rgba(16, 2, 2, 0.92)' : isAlmanach ? 'rgba(248, 241, 226, 0.94)' : 'rgba(9, 14, 24, 0.90)';
+    const textCol = nightVision ? '#ff6450' : isAlmanach ? '#2b2113' : '#f4f7fc';
+    const subCol = nightVision ? '#cc4232' : isAlmanach ? '#665338' : '#9fb2cf';
+
+    const uA = raDecToUnitVec(ptA.ra, ptA.dec);
+    const pA = viewport.projectUnitVec(uA[0], uA[1], uA[2]);
+
+    const drawEndpoint = (p, tag) => {
+      if (!p || !p.visible) return;
+      ctx.save();
+      ctx.strokeStyle = accent;
+      ctx.fillStyle = accentSoft;
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, 7.5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, 2, 0, Math.PI * 2);
+      ctx.fillStyle = accent;
+      ctx.fill();
+      if (tag) {
+        ctx.font = '600 10px "IBM Plex Mono", monospace';
+        ctx.fillStyle = accent;
+        ctx.fillText(tag, p.x + 10, p.y - 6);
+      }
+      ctx.restore();
+    };
+
+    ctx.save();
+    drawEndpoint(pA, ptA.label || 'A');
+
+    if (!ptB) {
+      ctx.restore();
+      return;
+    }
+
+    const uB = raDecToUnitVec(ptB.ra, ptB.dec);
+    const pB = viewport.projectUnitVec(uB[0], uB[1], uB[2]);
+    const arcPts = greatCircleArc(uA, uB, 2);
+    const maxJump = Math.max(viewport.width, viewport.height) * 0.4;
+
+    ctx.strokeStyle = accent;
+    ctx.lineWidth = 1.75;
+    ctx.setLineDash([6, 4]);
+    ctx.beginPath();
+    let prev = null;
+    const screenPts = [];
+    for (let i = 0; i < arcPts.length; i++) {
+      const u = arcPts[i];
+      const p = viewport.projectUnitVec(u[0], u[1], u[2]);
+      if (p.visible) {
+        screenPts.push(p);
+        if (prev && Math.hypot(p.x - prev.x, p.y - prev.y) < maxJump) {
+          ctx.lineTo(p.x, p.y);
+        } else {
+          ctx.moveTo(p.x, p.y);
+        }
+        prev = p;
+      } else {
+        prev = null;
+      }
+    }
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    drawEndpoint(pB, ptB.label || 'B');
+
+    if (screenPts.length >= 2) {
+      const mid = screenPts[Math.floor(screenPts.length / 2)];
+      const sepDeg = angularSepDeg(uA, uB);
+      const paDeg = positionAngleDeg(uA, uB, ptA.ra);
+      const sepStr = formatSeparation(sepDeg);
+      const scaleStr = formatVisualScaleEquiv(sepDeg, state.opticalTfovDeg || null);
+      const line1 = `${sepStr} · PA ${Math.round(paDeg)}°${scaleStr ? ` · ${scaleStr}` : ''}`;
+      const line2 = formatDeltaRaDec(ptA.ra, ptA.dec, ptB.ra, ptB.dec);
+
+      ctx.font = '600 11.5px "IBM Plex Mono", monospace';
+      const w1 = ctx.measureText(line1).width;
+      ctx.font = '400 10px "IBM Plex Mono", monospace';
+      const w2 = ctx.measureText(line2).width;
+      const boxW = Math.max(w1, w2) + 20;
+      const boxH = 38;
+
+      const bx = Math.max(82, Math.min(viewport.width - boxW - 18, mid.x - boxW * 0.5));
+      const by = Math.max(72, Math.min(viewport.height - boxH - 84, mid.y - boxH - 10));
+
+      ctx.fillStyle = pillBg;
+      ctx.strokeStyle = accent;
+      ctx.lineWidth = 1.1;
+      ctx.beginPath();
+      if (ctx.roundRect) {
+        ctx.roundRect(bx, by, boxW, boxH, 9);
+      } else {
+        ctx.rect(bx, by, boxW, boxH);
+      }
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.textAlign = 'center';
+      ctx.font = '600 11.5px "IBM Plex Mono", monospace';
+      ctx.fillStyle = textCol;
+      ctx.fillText(line1, bx + boxW * 0.5, by + 15);
+      ctx.font = '400 10px "IBM Plex Mono", monospace';
+      ctx.fillStyle = subCol;
+      ctx.fillText(line2, bx + boxW * 0.5, by + 30);
+    }
+
     ctx.restore();
   }
 

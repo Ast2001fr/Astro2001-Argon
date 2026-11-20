@@ -170,7 +170,10 @@ export class PanelsUI {
           { key: 'constellationBounds', label: 'Limites officielles UAI', kbd: 'B' },
           { key: 'gridAzimuthal', label: 'Grille azimutale (Alt/Az)', kbd: 'Z' },
           { key: 'gridEquatorial', label: 'Grille équatoriale (AD/Déc)', kbd: 'E' },
-          { key: 'ecliptic', label: 'Ligne de l’écliptique', kbd: ',' }
+          { key: 'ecliptic', label: 'Ligne de l’écliptique', kbd: ',' },
+          { key: 'meridian', label: 'Méridien local (N–Z–S)', kbd: '⇧M' },
+          { key: 'equator', label: 'Équateur céleste (δ = 0°)', kbd: '⇧Q' },
+          { key: 'galactic', label: 'Plan galactique (b = 0° · Sgr A*)', kbd: '⇧P' }
         ]
       },
       {

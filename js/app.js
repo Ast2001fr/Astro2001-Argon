@@ -19,7 +19,7 @@ import {
   getShortcutMap,
   normalizeShortcutKey,
   getDefaultToggleState
-} from './features.js?v=11';
+} from './features.js?v=14';
 
 import {
   initI18n,
@@ -68,11 +68,20 @@ import {
   DEFAULT_METEOR_SHOWERS
 } from './astro/events.js?v=11';
 
-import { SkyViewport } from './render/projection.js?v=11';
-import { SkyRenderer, LUNAR_FEATURES } from './render/sky-renderer.js?v=11';
-import { ObjectCardUI } from './ui/object-card.js?v=11';
-import { PanelsUI } from './ui/panels.js?v=11';
+import { SkyViewport } from './render/projection.js?v=14';
+import { SkyRenderer, LUNAR_FEATURES } from './render/sky-renderer.js?v=14';
+import { ObjectCardUI } from './ui/object-card.js?v=14';
+import { PanelsUI } from './ui/panels.js?v=14';
 import { CommandPaletteUI } from './ui/command-palette.js?v=11';
+import {
+  raDecToUnitVec,
+  angularSepDeg,
+  positionAngleDeg,
+  formatSeparation,
+  formatVisualScaleEquiv,
+  formatDeltaRaDec,
+  formatDeltaAltAz
+} from './astro/measure.js?v=14';
 
 const COMPASS_DIRS = ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 'S', 'SSO', 'SO', 'OSO', 'O', 'ONO', 'NO', 'NNO'];
 
@@ -131,6 +140,9 @@ export class PlanetariumApp {
         gridAzimuthal: false,
         gridEquatorial: false,
         ecliptic: true,
+        meridian: false,
+        equator: false,
+        galactic: false,
         milkyWay: true,
         dssHips: false,
         dso: true,
@@ -178,6 +190,14 @@ export class PlanetariumApp {
       trackedObjectId: null,
       tracedObjectId: null,
       tracedTrajectory: null,
+      opticalTfovDeg: 0.52,
+      ruler: {
+        modeActive: false,
+        a: null,
+        b: null,
+        hoverB: null,
+        shiftDragging: false
+      },
 
       getHorizonElevationAtAz: (az) => this.getHorizonElevationAtAz(az),
       getConstellationName: (code) => getConstellationName(code)
@@ -480,6 +500,10 @@ export class PlanetariumApp {
     } else if (this.state.selectedObject) {
       this._refreshObjectCoordinates(this.state.selectedObject);
     }
+
+    if (this.state.ruler && (this.state.ruler.a || this.state.ruler.b)) {
+      this._refreshRulerAnchors();
+    }
   }
 
   _refreshObjectCoordinates(obj) {
@@ -674,9 +698,10 @@ export class PlanetariumApp {
 
   _updateTrainChip() {
     const txtEl = document.getElementById('trainChipText');
-    if (!txtEl) return;
     const cfg = this.state.telescopeConfig;
     const stats = this.computeOpticalStats();
+    this.state.opticalTfovDeg = stats.tfovDeg;
+    if (!txtEl) return;
     txtEl.textContent = `${cfg.apertureMm}/${cfg.focalMm} · ${cfg.eyepieceFocalMm} mm → ×${stats.magnification} · ${stats.tfovStr} · pup. ${stats.exitPupilMm} mm`;
   }
 
@@ -1069,6 +1094,10 @@ export class PlanetariumApp {
     this._toggleZenMode = toggleZen;
     document.getElementById('btn-zen-mode')?.addEventListener('click', toggleZen);
     document.getElementById('btn-exit-zen')?.addEventListener('click', toggleZen);
+
+    // Angular Ruler quick toggle & clear buttons
+    document.getElementById('btn-quick-ruler')?.addEventListener('click', () => this.toggleRulerMode());
+    document.getElementById('btn-ruler-clear')?.addEventListener('click', () => this.clearRuler());
   }
 
   _bindCanvasInteraction() {
@@ -1080,6 +1109,21 @@ export class PlanetariumApp {
     let velX = 0, velY = 0;
 
     this.canvas.addEventListener('pointerdown', (e) => {
+      // Desktop Shift+drag starts an immediate angular measurement without entering persistent mode
+      if (e.shiftKey && this.viewport.viewMode !== 'solarsystem') {
+        const ptA = this._makeRulerPointAt(e.clientX, e.clientY);
+        if (ptA) {
+          this.state.ruler.shiftDragging = true;
+          this.state.ruler.a = ptA;
+          this.state.ruler.b = null;
+          this.state.ruler.hoverB = null;
+          this.canvas.setPointerCapture(e.pointerId);
+          this._updateRulerBar();
+          this.requestRender();
+          return;
+        }
+      }
+
       isDragging = true;
       hasMovedBeyondTap = false;
       this._isInteractingCanvas = true;
@@ -1093,8 +1137,28 @@ export class PlanetariumApp {
     });
 
     this.canvas.addEventListener('pointermove', (e) => {
+      // Live preview during Shift+drag measurement
+      if (this.state.ruler.shiftDragging) {
+        const ptB = this._makeRulerPointAt(e.clientX, e.clientY);
+        if (ptB) {
+          this.state.ruler.hoverB = ptB;
+          this._updateRulerBar();
+          this.requestRender();
+        }
+        return;
+      }
+
       if (!isDragging) {
         this._handleCanvasHover(e.clientX, e.clientY);
+        // Live rubber-band preview when Ruler mode has point A anchored and awaits point B
+        if (this.state.ruler.modeActive && this.state.ruler.a && !this.state.ruler.b) {
+          const ptB = this._makeRulerPointAt(e.clientX, e.clientY);
+          if (ptB) {
+            this.state.ruler.hoverB = ptB;
+            this._updateRulerBar();
+            this.requestRender();
+          }
+        }
         return;
       }
       const now = performance.now();
@@ -1126,11 +1190,47 @@ export class PlanetariumApp {
     });
 
     const finishDrag = (e) => {
+      if (this.state.ruler.shiftDragging) {
+        this.state.ruler.shiftDragging = false;
+        const ptB = this._makeRulerPointAt(e.clientX, e.clientY);
+        if (ptB) {
+          this.state.ruler.b = ptB;
+          this.state.ruler.hoverB = null;
+        } else {
+          this.state.ruler.a = null;
+          this.state.ruler.hoverB = null;
+        }
+        this._updateRulerBar();
+        this.requestRender();
+        return;
+      }
+
       if (!isDragging) return;
       isDragging = false;
       this._isInteractingCanvas = false;
       const moved = Math.hypot(e.clientX - startX, e.clientY - startY);
       if (!hasMovedBeyondTap && moved < 5) {
+        // If Ruler mode is active, tap places point A or point B (snapping to objects cleanly)
+        if (this.state.ruler.modeActive && this.viewport.viewMode !== 'solarsystem') {
+          const pt = this._makeRulerPointAt(e.clientX, e.clientY);
+          if (pt) {
+            if (!this.state.ruler.a || this.state.ruler.b) {
+              this.state.ruler.a = pt;
+              this.state.ruler.b = null;
+              this.state.ruler.hoverB = null;
+            } else {
+              this.state.ruler.b = pt;
+              this.state.ruler.hoverB = null;
+              this.state.ruler.modeActive = false;
+              this.canvas.classList.remove('ruler-cursor');
+              document.getElementById('btn-quick-ruler')?.classList.remove('active');
+            }
+            this._updateRulerBar();
+            this.requestRender();
+          }
+          return;
+        }
+
         const picked = this.renderer.pickObjectAt(e.clientX, e.clientY);
         if (picked) {
           this.selectObject(picked);
@@ -1272,6 +1372,10 @@ export class PlanetariumApp {
           this.commandPaletteUI.close();
           return;
         }
+        if (this.state.ruler && (this.state.ruler.modeActive || this.state.ruler.a || this.state.ruler.b)) {
+          this.clearRuler();
+          return;
+        }
         if (this.panelsUI.activePanelId) {
           this.panelsUI.closePanel();
           return;
@@ -1282,14 +1386,15 @@ export class PlanetariumApp {
       const tag = (e.target && e.target.tagName) ? e.target.tagName.toLowerCase() : '';
       if (tag === 'input' || tag === 'textarea' || tag === 'select') return;
 
-      // Cinema / Zen mode toggle on 'H'
-      if (e.key.toLowerCase() === 'h' && !e.metaKey && !e.ctrlKey && !e.altKey) {
+      // Cinema / Zen mode toggle on Shift+Z (keeps H free for horizonProfile)
+      if (e.shiftKey && e.key.toLowerCase() === 'z' && !e.metaKey && !e.ctrlKey && !e.altKey) {
         e.preventDefault();
         if (this._toggleZenMode) this._toggleZenMode();
         return;
       }
 
-      const keyNorm = normalizeShortcutKey(e.key === ' ' ? 'Space' : e.key);
+      const rawKey = e.key === ' ' ? 'Space' : (e.shiftKey && e.key.length === 1 && /[a-z]/i.test(e.key) ? `Shift+${e.key.toUpperCase()}` : e.key);
+      const keyNorm = normalizeShortcutKey(rawKey);
       const feat = shortcutMap.get(keyNorm);
       if (feat) {
         e.preventDefault();
@@ -1299,7 +1404,9 @@ export class PlanetariumApp {
   }
 
   executeFeatureAction(featureId) {
-    if (featureId.startsWith('view.')) {
+    if (featureId === 'tool.ruler') {
+      this.toggleRulerMode();
+    } else if (featureId.startsWith('view.')) {
       this.setViewMode(featureId.slice(5));
     } else if (featureId.startsWith('toggle.')) {
       this.toggleLayer(featureId.slice(7));
@@ -1320,6 +1427,164 @@ export class PlanetariumApp {
     } else if (featureId === 'time.stepBackward') {
       document.getElementById('btn-time-step-back')?.click();
     }
+  }
+
+  /* ==========================================================================
+   * ANGULAR MEASUREMENT RULER (ETUDE-REGLE-REPERES.md)
+   * ========================================================================== */
+  toggleRulerMode() {
+    const r = this.state.ruler;
+    if (r.modeActive) {
+      this.clearRuler();
+      return;
+    }
+    r.modeActive = true;
+    r.a = null;
+    r.b = null;
+    r.hoverB = null;
+    this.canvas.classList.add('ruler-cursor');
+    document.getElementById('btn-quick-ruler')?.classList.add('active');
+    this._updateRulerBar();
+    this.requestRender();
+  }
+
+  startMeasureFromObject(obj) {
+    if (!obj) return;
+    this._refreshObjectCoordinates(obj);
+    if (obj.ra === undefined || obj.dec === undefined) return;
+    const r = this.state.ruler;
+    r.modeActive = true;
+    r.a = {
+      kind: 'obj',
+      ref: obj,
+      ra: obj.ra,
+      dec: obj.dec,
+      alt: obj.alt ?? 0,
+      az: obj.az ?? 0,
+      label: obj.lunarFeature ? obj.lunarFeature.name : (obj.name || obj.id)
+    };
+    r.b = null;
+    r.hoverB = null;
+    this.canvas.classList.add('ruler-cursor');
+    document.getElementById('btn-quick-ruler')?.classList.add('active');
+    if (window.innerWidth <= 820) {
+      this.objectCardUI.render(null);
+    }
+    this._updateRulerBar();
+    this.requestRender();
+  }
+
+  clearRuler() {
+    const r = this.state.ruler;
+    r.modeActive = false;
+    r.shiftDragging = false;
+    r.a = null;
+    r.b = null;
+    r.hoverB = null;
+    this.canvas.classList.remove('ruler-cursor');
+    document.getElementById('btn-quick-ruler')?.classList.remove('active');
+    this._updateRulerBar();
+    this.requestRender();
+  }
+
+  _makeRulerPointAt(clientX, clientY) {
+    // 1. Snap cleanly to any catalogued star, planet, DSO, asteroid, or satellite under cursor
+    const picked = this.renderer.pickObjectAt(clientX, clientY);
+    if (picked) {
+      this._refreshObjectCoordinates(picked);
+      if (picked.ra !== undefined && picked.dec !== undefined) {
+        return {
+          kind: 'obj',
+          ref: picked,
+          ra: picked.ra,
+          dec: picked.dec,
+          alt: picked.alt ?? 0,
+          az: picked.az ?? 0,
+          label: picked.lunarFeature ? picked.lunarFeature.name : (picked.name || picked.id)
+        };
+      }
+    }
+    // 2. Otherwise sample arbitrary empty sky coordinates
+    const skyPos = this.viewport.unprojectScreenToSky(clientX, clientY);
+    if (!skyPos) return null;
+    return {
+      kind: 'sky',
+      ra: skyPos.raDeg,
+      dec: skyPos.decDeg,
+      alt: skyPos.altDeg,
+      az: skyPos.azDeg,
+      label: null
+    };
+  }
+
+  _refreshRulerAnchors() {
+    const r = this.state.ruler;
+    if (!r) return;
+    let updated = false;
+    for (const key of ['a', 'b']) {
+      const pt = r[key];
+      if (!pt) continue;
+      if (pt.kind === 'obj' && pt.ref) {
+        this._refreshObjectCoordinates(pt.ref);
+        pt.ra = pt.ref.ra;
+        pt.dec = pt.ref.dec;
+        pt.alt = pt.ref.alt ?? 0;
+        pt.az = pt.ref.az ?? 0;
+        updated = true;
+      } else {
+        const hor = equatorialToHorizontal(pt.ra, pt.dec, this.state.lstDeg, this.state.observer.lat);
+        pt.alt = hor.alt;
+        pt.az = hor.az;
+        updated = true;
+      }
+    }
+    if (updated) {
+      this._updateRulerBar();
+    }
+  }
+
+  _updateRulerBar() {
+    const bar = document.getElementById('rulerBar');
+    const txt = document.getElementById('rulerBarText');
+    if (!bar || !txt) return;
+    const r = this.state.ruler;
+    if (!r.modeActive && !r.a && !r.b) {
+      bar.classList.add('hidden');
+      return;
+    }
+    bar.classList.remove('hidden');
+
+    const ptA = r.a;
+    const ptB = r.b || r.hoverB;
+
+    if (!ptA) {
+      txt.innerHTML = 'Règle angulaire : cliquer <strong>A</strong> puis <strong>B</strong> <span class="ruler-sub">(ou Maj+glisser · Échap pour quitter)</span>';
+      return;
+    }
+    if (!ptB) {
+      const nameA = ptA.label || 'point A';
+      txt.innerHTML = `Ancré sur <strong>${nameA}</strong> — cliquer le second astre ou point du ciel`;
+      return;
+    }
+
+    const uA = raDecToUnitVec(ptA.ra, ptA.dec);
+    const uB = raDecToUnitVec(ptB.ra, ptB.dec);
+    const sepDeg = angularSepDeg(uA, uB);
+    const paDeg = positionAngleDeg(uA, uB, ptA.ra);
+    const sepStr = formatSeparation(sepDeg);
+    const equivStr = formatVisualScaleEquiv(sepDeg, this.state.opticalTfovDeg);
+    const dEq = formatDeltaRaDec(ptA.ra, ptA.dec, ptB.ra, ptB.dec);
+    const dHor = formatDeltaAltAz(ptA.alt ?? 0, ptA.az ?? 0, ptB.alt ?? 0, ptB.az ?? 0);
+    const pairLabel = (ptA.label || ptB.label)
+      ? `${ptA.label || 'A'} → ${ptB.label || 'B'} : `
+      : '';
+    const isApparent = (ptA.ref?.type === 'planet' || ptB.ref?.type === 'planet');
+    const epochTag = isApparent ? 'date' : 'J2000';
+
+    txt.innerHTML = `
+      ${pairLabel}<strong>${sepStr}</strong> · PA <strong>${paDeg.toFixed(1)}°</strong> (${epochTag})${equivStr ? ` · ${equivStr}` : ''}
+      <span class="ruler-sub">${dEq} · ${dHor}</span>
+    `;
   }
 
   /* ==========================================================================

@@ -12,7 +12,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/styles.css?v=13">
+  <link rel="stylesheet" href="css/styles.css?v=14">
 </head>
 <body>
   <div id="app-shell">
@@ -21,6 +21,18 @@
 
     <!-- Floating Hover Object Tooltip (follows cursor over stars, planets, DSOs, craters) -->
     <div id="sky-hover-tip" class="sky-hover-tip hidden" role="status" aria-live="polite"></div>
+
+    <!-- Compact Top Angular Ruler Status & Readout Pill (#rulerBar) -->
+    <div id="rulerBar" class="ruler-bar hidden" role="status" aria-live="polite">
+      <svg class="ruler-bar-ic" viewBox="0 0 24 24" width="15" height="15" aria-hidden="true">
+        <path d="M4 17L17 4l3 3L7 20l-3-3z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/>
+        <path d="M9.5 11.5l1.5 1.5M12.5 8.5l1.5 1.5M6.5 14.5l1.5 1.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+      </svg>
+      <div id="rulerBarText" class="ruler-bar-text mono">Règle angulaire : cliquer A puis B (ou Maj+glisser)</div>
+      <button type="button" id="btn-ruler-clear" class="ruler-bar-close" title="Effacer la mesure (Échap)" aria-label="Effacer la mesure">
+        <svg viewBox="0 0 24 24" width="13" height="13"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+      </button>
+    </div>
 
     <!-- Floating Quick-Action Sky Overlays & Live Cursor Telemetry (Bottom-Right) -->
     <div id="sky-hud-bottom-right" class="sky-hud-br">
@@ -46,7 +58,11 @@
           <span>Atmo</span>
         </button>
         <span class="qsky-div" aria-hidden="true"></span>
-        <button type="button" id="btn-zen-mode" class="qsky-btn" title="Mode Cinéma — masquer l'interface (H)">
+        <button type="button" id="btn-quick-ruler" class="qsky-btn" title="Règle angulaire : mesurer séparation &amp; PA (X ou Maj+glisser)">
+          <svg viewBox="0 0 24 24" width="14" height="14"><path d="M4 17L17 4l3 3L7 20l-3-3z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M9.5 11.5l1.5 1.5M12.5 8.5l1.5 1.5M6.5 14.5l1.5 1.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+          <span>Règle</span>
+        </button>
+        <button type="button" id="btn-zen-mode" class="qsky-btn" title="Mode Cinéma — masquer l'interface (⇧Z)">
           <svg viewBox="0 0 24 24" width="14" height="14"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
         </button>
       </div>
@@ -354,6 +370,6 @@
     </div>
   </div>
 
-  <script type="module" src="js/app.js?v=13"></script>
+  <script type="module" src="js/app.js?v=14"></script>
 </body>
 </html>
